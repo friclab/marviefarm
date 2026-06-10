@@ -1,0 +1,437 @@
+<?php
+class OrderheadersController extends AppController {
+
+	var $name = 'Orderheaders';
+
+	var $uses = array('Orderheader', 'Xorderrow','Xorderhead');
+
+
+
+	function index() {
+		$this->Orderheader->recursive = 0;
+		$this->set('orderheaders', $this->paginate());
+	}
+
+	function view($id = null) {
+		if (!$id) {
+			$this->Session->setFlash(__('Invalid orderheader', true));
+			$this->redirect(array('action' => 'index'));
+		}
+		$this->Orderheader->recursive = 3;
+		$orderheader = $this->Orderheader->read(null, $id);
+
+
+		$subtotal = 0;
+		$partialTotal=0;
+		foreach($orderheader['Orderdetail'] as $row){
+			$partialTotal += $row['Fabric']['price']*$row['qta'];
+		}
+
+
+		$discountAmount = $partialTotal * $orderheader['Orderheader']['discount'] / 100;
+		$subtotal = $partialTotal - $discountAmount;
+		$vat = $orderheader['Customer']['vat_applied']*$subtotal/100;
+
+			
+
+		$grandtotal = number_format($vat+$subtotal,2). ' €';
+		$discountAmount = number_format($discountAmount,2). ' €';
+		$subtotal = number_format($subtotal,2). ' €';
+		$vat=number_format($vat,2). ' €';
+		$partialTotal=number_format($partialTotal,2). ' €';
+
+		$vat = $this->str_pad_as_single($vat, 14, "&nbsp;", STR_PAD_LEFT);
+		$grandtotal = $this->str_pad_as_single($grandtotal,14, "&nbsp;", STR_PAD_LEFT);
+		$subtotal = $this->str_pad_as_single($subtotal, 14, "&nbsp;", STR_PAD_LEFT);
+		$partialTotal= $this->str_pad_as_single($partialTotal, 14, "&nbsp;", STR_PAD_LEFT);
+		$discountAmount= $this->str_pad_as_single($discountAmount, 14, "&nbsp;", STR_PAD_LEFT);
+
+		$this->set('vat',$vat);
+		$this->set('subtotal',$subtotal);
+		$this->set('grandtotal',$grandtotal);
+		$this->set('partialTotal',$partialTotal);
+		$this->set('discountAmount',$discountAmount);
+
+		$this->set('orderheader', $orderheader);
+	}
+
+	function add() {
+		if (!empty($this->data)) {
+			$this->Orderheader->create();
+			if ($this->Orderheader->save($this->data)) {
+				$this->Session->setFlash(__('The orderheader has been saved', true));
+				$this->redirect(array('action' => 'view', $this->Orderheader->id));
+			} else {
+				$this->Session->setFlash(__('The orderheader could not be saved. Please, try again.', true));
+			}
+		}
+
+		$query = mysql_query('SELECT MAX(id) as max_id FROM orderheaders');
+		$row = mysql_fetch_array($query);
+		$next_id = $row['max_id'] + 1;
+
+
+		$customers = $this->Orderheader->Customer->find('list');
+		$collections = $this->Orderheader->Collection->find('list');
+		$this->set('next_id',$next_id);
+		$this->set(compact('customers', 'collections'));
+	}
+
+	function edit($id = null) {
+		if (!$id && empty($this->data)) {
+			$this->Session->setFlash(__('Invalid orderheader', true));
+			$this->redirect(array('action' => 'index'));
+		}
+		if (!empty($this->data)) {
+			if ($this->Orderheader->save($this->data)) {
+				$this->Session->setFlash(__('The orderheader has been saved', true));
+				$this->redirect(array('action' => 'index'));
+			} else {
+				$this->Session->setFlash(__('The orderheader could not be saved. Please, try again.', true));
+			}
+		}
+		if (empty($this->data)) {
+			$this->data = $this->Orderheader->read(null, $id);
+		}
+		$customers = $this->Orderheader->Customer->find('list');
+		$collections = $this->Orderheader->Collection->find('list');
+		$this->set(compact('customers', 'collections'));
+	}
+
+	function delete($id = null) {
+		if (!$id) {
+			$this->Session->setFlash(__('Invalid id for orderheader', true));
+			$this->redirect(array('action'=>'index'));
+		}
+		$this->Orderheader->query("delete from orderdetails where orderheader_id = ".$id);
+
+		if ($this->Orderheader->delete($id)) {
+			$this->Session->setFlash(__('Orderheader deleted', true));
+			$this->redirect(array('action'=>'index'));
+		}
+		$this->Session->setFlash(__('Orderheader was not deleted', true));
+		$this->redirect(array('action' => 'index'));
+	}
+
+
+	function exportPdf($id = null) {
+		Configure::write('debug', 0);
+		if (!$id)	{
+			$this->Session->setFlash('Sorry, there was no property ID submitted.');
+			$this->redirect(array('action'=>'index'), null, true);
+		}
+		Configure::write('debug',0); // Otherwise we cannot use this method while developing
+
+
+		$head = $this ->getOrderHeader($id);
+		$details = $this->getOrderDetails($id);
+
+		$righe=array();
+		foreach($details as $j =>$art){
+			$righe[$art['a']['id']][]=$art;
+		}
+
+		//$this->htmlvardump($righe);
+		$this->set('head',$head);
+		$this->set('details',$righe);
+
+		$this->set('filename','order_'.$head[0]['ot']['order_number'].'_'.$head[0]['cl']['company'].'.pdf');
+
+		$this->layout = 'pdf';
+		$this->render('export_pdf','pdf');
+	}
+
+	function chooseQuantity($id = null) {
+		Configure::write('debug', 0);
+		if (!$id)	{
+			$this->Session->setFlash('Sorry, there was no property ID submitted.');
+			$this->redirect(array('action'=>'index'), null, true);
+		}
+		Configure::write('debug',0); // Otherwise we cannot use this method while developing
+
+
+		$head = $this ->getOrderHeader($id);
+		$details = $this->Xorderrow->query("SELECT
+    a.id ,
+    a.name
+FROM
+    orderdetails od ,
+    articles a,
+    articles_projects ap,
+    modeltypes_sexes mts,
+    projects p,
+    sexes s
+WHERE
+    1=1
+AND mts.id = a.modeltypes_sex_id
+AND s.id = mts.sex_id
+AND p.id = ap.project_id
+AND ap.article_id = a.id
+AND od.orderheader_id =".$id."
+AND od.article_id = a.id
+GROUP BY
+    a.id,
+    a.name
+ORDER BY
+s.code,
+    p.name,
+    
+    a.name");
+
+		$righe=array();
+		foreach($details as  $j =>$art){
+			$fabricsRes = $this->Xorderrow->query("SELECT     f.code,    f.description,    f.price, f.id
+							FROM    fabrics f,    articles a
+							WHERE    f.article_id = a.id AND a.id = ".$art['a']['id']."
+							ORDER BY     f.code,     f.description 
+    		");
+			$fabrics = array();
+			foreach($fabricsRes as $k=>$f){
+				$fabrics[$k]['code']=$f['f']['code'];
+				$fabrics[$k]['id']=$f['f']['id'];
+				$fabrics[$k]['description']=$f['f']['description'];
+				$fabrics[$k]['price']=$f['f']['price'];
+
+			}
+
+			//$this->htmlvardump($fabricsRes);
+
+			$sizesRes = $this->Xorderrow->query("SELECT
+						    s.code
+						FROM
+						    articles a ,
+						    modeltypessexes_sizes mtts,
+						    modeltypes_sexes mts,
+						    sizes s
+						WHERE
+						    1=1
+						AND mts.id = a.modeltypes_sex_id
+						AND mts.id = mtts.modeltypessex_id
+						AND mtts.size_id = s.id
+						AND a.id = ".$art['a']['id']."
+						ORDER BY
+						    s.code
+    		");
+
+			$sizes = array();
+			foreach($sizesRes as $k=>$s){
+				$sizes[$k ] = $s['s']['code'];
+			}
+
+			$righe[$art['a']['id']]['name']=$art['a']['name'];
+			$righe[$art['a']['id']]['fabrics']=$fabrics;
+			$righe[$art['a']['id']]['sizes']=$sizes;
+		}
+
+
+
+		$chooseRes = $this->Xorderrow->query("SELECT     od.fabric_id
+			FROM     orderdetails od WHERE     1=1 AND od.orderheader_id = ".$id);
+		$choose = array();
+		foreach($chooseRes as $k=>$c){
+			$choose[$k] = $c['od']['fabric_id'];
+		}
+
+		//$this->htmlvardump($choose);
+		$this->set('head',$head);
+		$this->set('details',$righe);
+		$this->set('choose',$choose);
+
+		$this->set('filename','order_'.$head[0]['ot']['order_number'].'_'.$head[0]['cl']['company'].'.pdf');
+
+		$this->layout = 'pdf';
+		$this->render('choose_quantity_pdf','pdf');
+	}
+	
+	
+	function chooseQuantityWS($id = null) {
+		Configure::write('debug', 0);
+		if (!$id)	{
+			$this->Session->setFlash('Sorry, there was no property ID submitted.');
+			$this->redirect(array('action'=>'index'), null, true);
+		}
+		Configure::write('debug',0); // Otherwise we cannot use this method while developing
+	
+	
+		$head = $this ->getOrderHeader($id);
+		$details = $this->Xorderrow->query("SELECT
+	   				 a.id , a.name FROM        orderdetails od ,     articles a,
+    articles_projects ap,
+    projects p,
+modeltypes_sexes mts,
+modeltypes mt
+					WHERE 1=1 AND od.orderheader_id = ".$id."
+	AND od.article_id = a.id
+and ap.article_id = a.id
+and p.id = ap.project_id
+and mts.id = a.modeltypes_sex_id
+and mt.id = mts.modeltype_id
+GROUP BY
+    a.id,
+    a.name
+ORDER BY
+    p.name,
+    mt.code, 
+    a.name");
+	
+		$righe=array();
+		foreach($details as  $j =>$art){
+			$fabricsRes = $this->Xorderrow->query("SELECT     f.code,    f.description,    f.price, f.id
+								FROM    fabrics f,    articles a
+								WHERE    f.article_id = a.id AND a.id = ".$art['a']['id']."
+								ORDER BY     f.code,     f.description 
+	    		");
+			$fabrics = array();
+			foreach($fabricsRes as $k=>$f){
+				$fabrics[$k]['code']=$f['f']['code'];
+				$fabrics[$k]['id']=$f['f']['id'];
+				$fabrics[$k]['description']=$f['f']['description'];
+				$fabrics[$k]['price']=$f['f']['price'];
+	
+			}
+	
+			//$this->htmlvardump($fabricsRes);
+	
+			$sizesRes = $this->Xorderrow->query("SELECT
+							    s.code
+							FROM
+							    articles a ,
+							    modeltypessexes_sizes mtts,
+							    modeltypes_sexes mts,
+							    sizes s
+							WHERE
+							    1=1
+							AND mts.id = a.modeltypes_sex_id
+							AND mts.id = mtts.modeltypessex_id
+							AND mtts.size_id = s.id
+							AND a.id = ".$art['a']['id']."
+							ORDER BY
+							    s.code
+	    		");
+	
+			$sizes = array();
+			foreach($sizesRes as $k=>$s){
+				$sizes[$k ] = $s['s']['code'];
+			}
+	
+			$righe[$art['a']['id']]['name']=$art['a']['name'];
+			$righe[$art['a']['id']]['fabrics']=$fabrics;
+			$righe[$art['a']['id']]['sizes']=$sizes;
+		}
+	
+	
+	
+		$chooseRes = $this->Xorderrow->query("SELECT     od.fabric_id
+				FROM     orderdetails od WHERE     1=1 AND od.orderheader_id = ".$id);
+		$choose = array();
+		foreach($chooseRes as $k=>$c){
+			$choose[$k] = $c['od']['fabric_id'];
+		}
+	
+		//$this->htmlvardump($choose);
+		$this->set('head',$head);
+		$this->set('details',$righe);
+		$this->set('choose',$choose);
+	
+		$this->set('filename','order_'.$head[0]['ot']['order_number'].'_'.$head[0]['cl']['company'].'.pdf');
+	
+		$this->layout = 'pdf';
+		$this->render('choose_quantity_pdf_ws','pdf');
+	}
+	
+	
+	
+
+	function sendMail($id = null) {
+		$this->Orderheader->recursive = 0;
+
+		$this->render('download','file');
+	}
+
+
+	function str_pad_as_single($input, $len, $pad, $flag=STR_PAD_RIGHT){
+		$trans=array('$'=>$input,' '=>$pad);
+		$output=str_pad('$',$len-strlen($input)+1,' ',$flag);
+		$output=strtr($output,$trans);
+		return $output;
+	}
+
+	function htmlvardump(){ob_start(); $var = func_get_args(); call_user_func_array('var_dump', $var); echo htmentities(ob_get_clean());}
+
+
+	function getOrderHeader($id){
+		return $this->Xorderhead->query("
+        SELECT
+    ot.order_number as order_number,
+    ot.description as order_description,
+    ot.date as order_date,
+    ot.discount as discount,
+    ot.payment,
+				ot.note,
+    cl.name as customer_name, 
+    cl.email as email,
+    cl.company as company    ,
+    cl.address as address,
+    cl.zip_code as zip,
+    cl.city as city,
+    cl.district as district,
+    cl.country as country,
+    cl.vat as vat,
+    cl.vat_applied as vat_applied,
+    SUM(od.qta * f.price) AS subtotal,
+    SUM(od.qta * f.price*vat_applied / 100) AS vat,
+    SUM(od.qta * f.price * (1+vat_applied / 100) ) AS grandtotal,
+    SUM(od.qta) as items
+FROM
+    customers cl,
+    orderheaders ot,
+    orderdetails od,
+    fabrics f
+WHERE
+    1=1
+AND ot.customer_id = cl.id
+AND ot.id = od.orderheader_id
+AND f.id = od.fabric_id
+AND ot.id=".$id);
+	}
+
+	function getOrderDetails($id){
+		return $this->Xorderrow->query("
+        SELECT  
+    od.qta as qty,
+    s.code as sex,
+    a.name as item ,
+    t.code as size,
+    f.code as fabric_code,
+    f.description as fabric_description,
+    a.id as id,
+	f.price,
+	od.note,
+	f.id as fabric_id
+    
+	FROM 
+customers cl,
+    orderheaders ot 
+LEFT JOIN orderdetails od
+ON    od.orderheader_id=ot.id
+left join articles a
+on od.article_id = a.id
+left join fabrics f
+on od.fabric_id = f.id
+left join modeltypessexes_sizes tmts
+on tmts.id = od.modeltypessexessize_id
+left join sizes t
+on  t.id = tmts.size_id
+left join  modeltypes_sexes mts
+on tmts.modeltypessex_id =  mts.id
+left join sexes s
+on s.id = mts.sex_id and tmts.size_id = t.id
+WHERE 1=1 
+AND ot.customer_id = cl.id AND ot.id=".$id." 
+order by s.code, a.name,  f.code, t.code
+
+        ");
+	}
+
+}
+?>

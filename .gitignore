@@ -1,6 +1,8 @@
 # Laravel
 /vendor/
 /node_modules/
+/nestjs-api/node_modules/
+/frontend/node_modules/
 .env
 .env.backup
 .phpunit.result.cache

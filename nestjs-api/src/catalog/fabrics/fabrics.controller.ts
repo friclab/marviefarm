@@ -1,0 +1,53 @@
+import {
+  Body, Controller, Delete, Get, HttpCode, HttpStatus,
+  Param, ParseIntPipe, Patch, Post, Query,
+} from '@nestjs/common';
+import { IsInt, IsOptional, IsPositive } from 'class-validator';
+import { Type } from 'class-transformer';
+import { PaginationDto } from '../../common/pagination.dto';
+import { PaginatedResult } from '../../common/paginated-result';
+import { CreateFabricDto } from './dto/create-fabric.dto';
+import { UpdateFabricDto } from './dto/update-fabric.dto';
+import { FabricsService, FabricResponse } from './fabrics.service';
+
+class FabricsQueryDto extends PaginationDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @IsPositive()
+  articleId?: number;
+}
+
+@Controller('fabrics')
+export class FabricsController {
+  constructor(private readonly service: FabricsService) {}
+
+  @Get()
+  findAll(@Query() query: FabricsQueryDto): Promise<PaginatedResult<FabricResponse>> {
+    return this.service.findAll(query.page, query.limit, query.articleId);
+  }
+
+  @Get(':id')
+  findOne(@Param('id', ParseIntPipe) id: number): Promise<FabricResponse> {
+    return this.service.findOne(id);
+  }
+
+  @Post()
+  create(@Body() dto: CreateFabricDto): Promise<FabricResponse> {
+    return this.service.create(dto);
+  }
+
+  @Patch(':id')
+  update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateFabricDto,
+  ): Promise<FabricResponse> {
+    return this.service.update(id, dto);
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  remove(@Param('id', ParseIntPipe) id: number): Promise<void> {
+    return this.service.remove(id);
+  }
+}

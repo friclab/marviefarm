@@ -1,0 +1,308 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-1.1.x", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id       Int    @id @default(autoincrement())
+  username String @unique
+  password String
+
+  @@map("users")
+}
+
+// ---------------------------------------------------------------------------
+// Sizing hierarchy: Modeltype ← ModeltypeSex → Sex
+//                                    ↓
+//                              ModeltypeSexSize → Size
+// ---------------------------------------------------------------------------
+
+model Sex {
+  id             Int            @id @default(autoincrement())
+  code           String
+  modeltypeSexes ModeltypeSex[]
+
+  @@map("sexes")
+}
+
+model Modeltype {
+  id          Int            @id @default(autoincrement())
+  code        String
+  description String?
+  sexes       ModeltypeSex[]
+
+  @@map("modeltypes")
+}
+
+// Explicit join-table model (not a transparent HABTM pivot)
+model ModeltypeSex {
+  id           Int                @id @default(autoincrement())
+  modeltypeId  Int                @map("modeltype_id")
+  sexId        Int                @map("sex_id")
+  modeltype    Modeltype          @relation(fields: [modeltypeId], references: [id])
+  sex          Sex                @relation(fields: [sexId], references: [id])
+  articles     Article[]
+  sizes        ModeltypeSexSize[]
+
+  @@unique([modeltypeId, sexId])
+  @@map("modeltypes_sexes")
+}
+
+model Size {
+  id             Int                @id @default(autoincrement())
+  code           String
+  modeltypeSexes ModeltypeSexSize[]
+
+  @@map("sizes")
+}
+
+// Explicit join-table model — every row is a valid (garment-type × gender × size) combination
+model ModeltypeSexSize {
+  id             Int          @id @default(autoincrement())
+  modeltypeSexId Int          @map("modeltypessex_id")
+  sizeId         Int          @map("size_id")
+  modeltypeSex   ModeltypeSex @relation(fields: [modeltypeSexId], references: [id])
+  size           Size         @relation(fields: [sizeId], references: [id])
+  orderDetails   OrderDetail[]
+
+  @@unique([modeltypeSexId, sizeId])
+  @@map("modeltypessexes_sizes")
+}
+
+// ---------------------------------------------------------------------------
+// Materials
+// ---------------------------------------------------------------------------
+
+model Supplier {
+  id        Int        @id @default(autoincrement())
+  company   String?
+  name      String?
+  surname   String?
+  materials Material[]
+
+  @@map("suppliers")
+}
+
+model Unitmeasurement {
+  id          Int        @id @default(autoincrement())
+  code        String
+  description String?
+  materials   Material[]
+
+  @@map("unitmeasurements")
+}
+
+model Materialtype {
+  id          Int                    @id @default(autoincrement())
+  code        String
+  description String?
+  materials   MaterialMaterialtype[]
+
+  @@map("materialtypes")
+}
+
+model Material {
+  id                  Int                          @id @default(autoincrement())
+  code                String
+  description         String?
+  price               Decimal?                     @db.Decimal(10, 2)
+  supplierId          Int?                         @map("supplier_id")
+  unitmeasurementId   Int?                         @map("unitmeasurement_id")
+  supplier            Supplier?                    @relation(fields: [supplierId], references: [id])
+  unitmeasurement     Unitmeasurement?             @relation(fields: [unitmeasurementId], references: [id])
+  materialtypes       MaterialMaterialtype[]
+  dynamicCompositions DynamicCompositionMaterial[]
+  fixedCompositions   FixedCompositionMaterial[]
+
+  @@map("materials")
+}
+
+model MaterialMaterialtype {
+  materialId     Int          @map("material_id")
+  materialtypeId Int          @map("materialtype_id")
+  material       Material     @relation(fields: [materialId], references: [id])
+  materialtype   Materialtype @relation(fields: [materialtypeId], references: [id])
+
+  @@id([materialId, materialtypeId])
+  @@map("materials_materialtypes")
+}
+
+// ---------------------------------------------------------------------------
+// Compositions — fixed: one fixed recipe; dynamic: can vary per order
+// ---------------------------------------------------------------------------
+
+model FixedComposition {
+  id          Int                        @id @default(autoincrement())
+  code        String
+  description String?
+  materials   FixedCompositionMaterial[]
+  articles    Article[]
+
+  @@map("fixedcompositions")
+}
+
+model FixedCompositionMaterial {
+  id                 Int              @id @default(autoincrement())
+  fixedCompositionId Int              @map("fixedcomposition_id")
+  materialId         Int              @map("material_id")
+  // quantity of this material consumed per unit of fabric
+  quantity           Decimal          @map("qta") @db.Decimal(10, 3)
+  fixedComposition   FixedComposition @relation(fields: [fixedCompositionId], references: [id])
+  material           Material         @relation(fields: [materialId], references: [id])
+
+  @@map("fixedcompositions_materials")
+}
+
+model DynamicComposition {
+  id          Int                          @id @default(autoincrement())
+  code        String
+  description String?
+  materials   DynamicCompositionMaterial[]
+  fabrics     Fabric[]
+
+  @@map("dynamiccompositions")
+}
+
+model DynamicCompositionMaterial {
+  id                   Int                @id @default(autoincrement())
+  dynamicCompositionId Int                @map("dynamiccomposition_id")
+  materialId           Int                @map("material_id")
+  quantity             Decimal            @map("qta") @db.Decimal(10, 3)
+  dynamicComposition   DynamicComposition @relation(fields: [dynamicCompositionId], references: [id])
+  material             Material           @relation(fields: [materialId], references: [id])
+
+  @@map("dynamiccompositions_materials")
+}
+
+// ---------------------------------------------------------------------------
+// Catalogue — articles (garment models) and their fabric variants
+// ---------------------------------------------------------------------------
+
+model Article {
+  id                 Int               @id @default(autoincrement())
+  name               String
+  description        String?
+  // Binary BLOB kept as-is from legacy DB; served via GET /articles/:id/image
+  image              Bytes?
+  modeltypesSexId    Int               @map("modeltypes_sex_id")
+  fixedCompositionId Int?              @map("fixedcomposition_id")
+  modeltypesSex      ModeltypeSex      @relation(fields: [modeltypesSexId], references: [id])
+  fixedComposition   FixedComposition? @relation(fields: [fixedCompositionId], references: [id])
+  fabrics            Fabric[]
+  orderDetails       OrderDetail[]
+  projects           ArticleProject[]
+
+  @@map("articles")
+}
+
+model Project {
+  id          Int                @id @default(autoincrement())
+  name        String
+  articles    ArticleProject[]
+  collections CollectionProject[]
+
+  @@map("projects")
+}
+
+model ArticleProject {
+  articleId Int     @map("article_id")
+  projectId Int     @map("project_id")
+  article   Article @relation(fields: [articleId], references: [id])
+  project   Project @relation(fields: [projectId], references: [id])
+
+  @@id([articleId, projectId])
+  @@map("articles_projects")
+}
+
+model Fabric {
+  id                   Int                 @id @default(autoincrement())
+  code                 String
+  description          String?
+  price                Decimal?            @db.Decimal(10, 2)
+  articleId            Int                 @map("article_id")
+  dynamicCompositionId Int?                @map("dynamiccomposition_id")
+  article              Article             @relation(fields: [articleId], references: [id])
+  dynamicComposition   DynamicComposition? @relation(fields: [dynamicCompositionId], references: [id])
+  orderDetails         OrderDetail[]
+
+  @@map("fabrics")
+}
+
+// ---------------------------------------------------------------------------
+// Orders
+// ---------------------------------------------------------------------------
+
+model Customer {
+  id         Int           @id @default(autoincrement())
+  company    String?
+  name       String?
+  surname    String?
+  email      String?
+  address    String?
+  zipCode    String?       @map("zip_code")
+  city       String?
+  district   String?
+  country    String?
+  vat        String?
+  vatApplied Decimal?      @map("vat_applied") @db.Decimal(5, 2)
+  orders     OrderHeader[]
+
+  @@map("customers")
+}
+
+model Collection {
+  id       Int                @id @default(autoincrement())
+  name     String
+  orders   OrderHeader[]
+  projects CollectionProject[]
+
+  @@map("collections")
+}
+
+model CollectionProject {
+  collectionId Int        @map("collection_id")
+  projectId    Int        @map("project_id")
+  collection   Collection @relation(fields: [collectionId], references: [id])
+  project      Project    @relation(fields: [projectId], references: [id])
+
+  @@id([collectionId, projectId])
+  @@map("collections_projects")
+}
+
+model OrderHeader {
+  id           Int           @id @default(autoincrement())
+  customerId   Int           @map("customer_id")
+  collectionId Int?          @map("collection_id")
+  orderNumber  String?       @map("order_number")
+  description  String?
+  date         DateTime?     @db.Date
+  discount     Decimal?      @map("discount") @db.Decimal(5, 2)
+  payment      String?
+  note         String?
+  customer     Customer      @relation(fields: [customerId], references: [id])
+  collection   Collection?   @relation(fields: [collectionId], references: [id])
+  orderDetails OrderDetail[]
+
+  @@map("orderheaders")
+}
+
+model OrderDetail {
+  id                 Int               @id @default(autoincrement())
+  orderHeaderId      Int               @map("orderheader_id")
+  articleId          Int               @map("article_id")
+  fabricId           Int?              @map("fabric_id")
+  modeltypeSexSizeId Int?              @map("modeltypessexessize_id")
+  quantity           Int?              @map("qta")
+  note               String?
+  orderHeader        OrderHeader       @relation(fields: [orderHeaderId], references: [id])
+  article            Article           @relation(fields: [articleId], references: [id])
+  fabric             Fabric?           @relation(fields: [fabricId], references: [id])
+  modeltypeSexSize   ModeltypeSexSize? @relation(fields: [modeltypeSexSizeId], references: [id])
+
+  @@map("orderdetails")
+}

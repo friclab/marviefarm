@@ -1,42 +1,51 @@
 services:
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    volumes:
-      - .:/var/www/html
-    depends_on:
-      db:
-        condition: service_healthy
-    environment:
-      PHP_OPCACHE_ENABLE: 0
-
-  nginx:
-    image: nginx:alpine
-    ports:
-      - "8080:80"
-    volumes:
-      - .:/var/www/html
-      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf
-    depends_on:
-      - app
-
   db:
     image: mariadb:11
-    ports:
-      - "3306:3306"
+    restart: unless-stopped
     environment:
-      MARIADB_ROOT_PASSWORD: secret
+      MARIADB_ROOT_PASSWORD: root
       MARIADB_DATABASE: marviefarm
       MARIADB_USER: marviefarm
       MARIADB_PASSWORD: secret
     volumes:
       - db_data:/var/lib/mysql
+    ports:
+      - "3306:3306"
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
-      interval: 5s
+      interval: 10s
       timeout: 5s
-      retries: 10
+      retries: 5
+
+  api:
+    build: ./nestjs-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: mysql://marviefarm:secret@db:3306/marviefarm
+      JWT_SECRET: ${JWT_SECRET:-changeme_please_set_in_production}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
+      CAKEPHP_SECURITY_SALT: ${CAKEPHP_SECURITY_SALT:-}
+      CHROMIUM_PATH: ${CHROMIUM_PATH:-}
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000/',r=>process.exit(r.statusCode?0:1)).on('error',()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "8080:80"
 
 volumes:
   db_data:

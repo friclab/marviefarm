@@ -1,0 +1,57 @@
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import { CrudPage, type Column } from '@/components/app/CrudPage';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import api from '@/lib/api';
+import type { Sex } from '@/types/api';
+
+const schema = z.object({ code: z.string().min(1, 'Obbligatorio') });
+type F = z.infer<typeof schema>;
+
+function SexForm({ item, onSuccess, onCancel }: { item?: Sex; onSuccess: () => void; onCancel: () => void }) {
+  const qc = useQueryClient();
+  const { register, handleSubmit, formState: { errors } } = useForm<F>({
+    resolver: zodResolver(schema),
+    defaultValues: { code: item?.code ?? '' },
+  });
+  const m = useMutation({
+    mutationFn: (d: F) => item ? api.patch(`/sexes/${item.id}`, d) : api.post('/sexes', d),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['sexes'] }); toast.success(item ? 'Aggiornato' : 'Creato'); onSuccess(); },
+    onError: () => toast.error('Errore nel salvataggio'),
+  });
+  return (
+    <form onSubmit={handleSubmit((d) => m.mutate(d))} className="space-y-4">
+      <div className="space-y-1">
+        <Label>Codice</Label>
+        <Input {...register('code')} autoFocus />
+        {errors.code && <p className="text-xs text-destructive">{errors.code.message}</p>}
+      </div>
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="outline" onClick={onCancel}>Annulla</Button>
+        <Button type="submit" disabled={m.isPending}>Salva</Button>
+      </div>
+    </form>
+  );
+}
+
+const columns: Column<Sex>[] = [
+  { header: 'Codice', cell: (s) => s.code },
+];
+
+export default function SexesPage() {
+  return (
+    <CrudPage<Sex>
+      title="Sessi"
+      endpoint="/sexes"
+      queryKey="sexes"
+      columns={columns}
+      FormComponent={SexForm}
+      createLabel="Nuovo sesso"
+    />
+  );
+}
