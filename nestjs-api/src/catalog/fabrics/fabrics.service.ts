@@ -7,6 +7,7 @@ import { paginate, PaginatedResult } from '../../common/paginated-result';
 import { joinDisplay } from '../../common/display-name';
 import { CreateFabricDto } from './dto/create-fabric.dto';
 import { UpdateFabricDto } from './dto/update-fabric.dto';
+import { BatchCreateFabricDto } from './dto/batch-create-fabric.dto';
 
 interface DynamicCompositionMaterialItem {
   id: number;
@@ -141,6 +142,58 @@ export class FabricsService {
 
     const row = await this.prisma.fabric.create({ data: dto, include: includeRelations });
     return toResponse(row);
+  }
+
+  // Create N variants at once. Each variant carries its own dynamic composition
+  // (typically the single distinguishing fabric), so the variants differ by
+  // their DYNAMIC material while remaining independently editable afterwards.
+  async batchCreate(dto: BatchCreateFabricDto): Promise<{ created: number }> {
+    await this.assertArticleExists(dto.articleId);
+
+    // Soft dedupe within the request: drop blank codes and repeats (first wins).
+    const seen = new Set<string>();
+    const variants = dto.variants
+      .map(v => ({
+        code: v.code.trim(),
+        description: v.description?.trim() || null,
+        materials: v.materials ?? [],
+      }))
+      .filter(v => v.code !== '' && !seen.has(v.code) && seen.add(v.code));
+
+    if (variants.length === 0) {
+      throw new BadRequestException('No valid variants to create');
+    }
+
+    const materialIds = [...new Set(variants.flatMap(v => v.materials.map(m => m.materialId)))];
+    if (materialIds.length > 0) {
+      const found = await this.prisma.material.count({ where: { id: { in: materialIds } } });
+      if (found !== materialIds.length) {
+        throw new BadRequestException('One or more materials do not exist');
+      }
+    }
+
+    await this.prisma.$transaction(async tx => {
+      for (const v of variants) {
+        const dc = await tx.dynamicComposition.create({
+          data: {
+            code: `DC-${v.code}`,
+            materials: v.materials.length
+              ? { create: v.materials.map(m => ({ materialId: m.materialId, quantity: m.quantity })) }
+              : undefined,
+          },
+        });
+        await tx.fabric.create({
+          data: {
+            code: v.code,
+            description: v.description,
+            articleId: dto.articleId,
+            dynamicCompositionId: dc.id,
+          },
+        });
+      }
+    });
+
+    return { created: variants.length };
   }
 
   async update(id: number, dto: UpdateFabricDto): Promise<FabricResponse> {

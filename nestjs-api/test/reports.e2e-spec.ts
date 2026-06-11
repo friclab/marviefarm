@@ -53,16 +53,23 @@ describe('Reports (e2e)', () => {
 
   // ── Cost calculation CSV (no Puppeteer required) ───────────────────────────
   describe('Cost calculation CSV', () => {
-    it('GET /reports/cost-calculation → 200 CSV', async () => {
+    it('GET /reports/cost-calculation → 200 (summary)', async () => {
       const res = await get('/reports/cost-calculation').expect(200);
-      expect(res.headers['content-type']).toContain('text/csv');
-      expect(res.headers['content-disposition']).toContain('cost_calculation.csv');
-      // Body starts with the CSV header row
-      expect(res.text).toContain('Articolo,Descrizione');
+      expect(res.headers['content-type']).toContain('text/plain');
+      expect(res.headers['content-disposition']).toContain('costX1.csv');
+      // Summary mode has no detail header, only the per-article separator
+      expect(res.text).not.toContain('Variante\tID\tMateriale');
     });
 
     it('GET /reports/cost-calculation?multiplier=2 → 200', () =>
       get('/reports/cost-calculation?multiplier=2').expect(200));
+
+    it('GET /reports/cost-calculation?detailed=true → 200 (detailed)', async () => {
+      const res = await get('/reports/cost-calculation?detailed=true').expect(200);
+      expect(res.headers['content-disposition']).toContain('costX1.csv');
+      // Detailed mode emits the per-article material breakdown header
+      expect(res.text).toContain('Variante\tID\tMateriale\tPrice\tQta\tUMI\tTotale');
+    });
   });
 
   // ── Articles list PDF (Puppeteer required) ─────────────────────────────────

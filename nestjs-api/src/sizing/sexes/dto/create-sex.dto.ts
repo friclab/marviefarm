@@ -1,7 +1,12 @@
-import { IsString, MaxLength } from 'class-validator';
+import { IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class CreateSexDto {
   @IsString()
-  @MaxLength(50)
+  @MaxLength(10)
   code: string = '';
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  description?: string;
 }

@@ -1,10 +1,12 @@
 import { useState } from 'react';
-import { Download, FileText, Table } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Download, FileText, Table, Eye, Boxes } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
+import { Checkbox } from '@/components/ui/checkbox';
 import api from '@/lib/api';
 
 function downloadBlob(blob: Blob, filename: string) {
@@ -17,7 +19,9 @@ function downloadBlob(blob: Blob, filename: string) {
 }
 
 export default function ReportsPage() {
+  const navigate = useNavigate();
   const [multiplier, setMultiplier] = useState('1');
+  const [detailed, setDetailed] = useState(false);
   const [csvLoading, setCsvLoading] = useState(false);
   const [articlesLoading, setArticlesLoading] = useState(false);
   const [formLoading, setFormLoading] = useState(false);
@@ -25,11 +29,12 @@ export default function ReportsPage() {
   async function downloadCsv() {
     setCsvLoading(true);
     try {
+      const mult = Number(multiplier) || 1;
       const res = await api.get('/reports/cost-calculation', {
-        params: { multiplier: Number(multiplier) || 1 },
+        params: { multiplier: mult, detailed },
         responseType: 'blob',
       });
-      downloadBlob(res.data as Blob, 'costo_produzione.csv');
+      downloadBlob(res.data as Blob, `costX${mult}.csv`);
     } catch {
       alert('Errore nel download CSV');
     } finally {
@@ -73,20 +78,56 @@ export default function ReportsPage() {
               <Table className="w-4 h-4" /> Calcolo Costo Produzione
             </CardTitle>
             <CardDescription>
-              CSV con costo per articolo (somma dei materiali dei tessuti × moltiplicatore)
+              Costo per articolo/variante (somma dei materiali × moltiplicatore).
+              Spunta «Dettaglio materiali» per il report esteso con la distinta dei materiali.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="flex items-end gap-3">
-              <div className="space-y-1 w-32">
-                <Label>Moltiplicatore</Label>
-                <Input type="number" step="0.1" min="0.1" value={multiplier} onChange={e => setMultiplier(e.target.value)} />
+            <div className="space-y-3">
+              <div className="flex items-end gap-3">
+                <div className="space-y-1 w-32">
+                  <Label>Moltiplicatore</Label>
+                  <Input type="number" step="0.1" min="0.1" value={multiplier} onChange={e => setMultiplier(e.target.value)} />
+                </div>
+                <Button onClick={downloadCsv} disabled={csvLoading} variant="outline">
+                  <Download className="w-4 h-4 mr-1" />
+                  {csvLoading ? 'Download...' : 'Scarica CSV'}
+                </Button>
+                <Button onClick={() => navigate('/reports/cost-preview')} variant="secondary">
+                  <Eye className="w-4 h-4 mr-1" />
+                  Visualizza online
+                </Button>
               </div>
-              <Button onClick={downloadCsv} disabled={csvLoading} variant="outline">
-                <Download className="w-4 h-4 mr-1" />
-                {csvLoading ? 'Download...' : 'Scarica CSV'}
-              </Button>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="detailed"
+                  checked={detailed}
+                  onCheckedChange={v => setDetailed(v === true)}
+                />
+                <Label htmlFor="detailed" className="font-normal cursor-pointer">
+                  Dettaglio materiali
+                </Label>
+              </div>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Material consumption */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Boxes className="w-4 h-4" /> Consumo Materiali
+            </CardTitle>
+            <CardDescription>
+              Quantità totale necessaria per ciascun materiale in base agli ordini inseriti.
+              Filtrabile per singolo ordine.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button onClick={() => navigate('/reports/material-consumption')} variant="secondary">
+              <Eye className="w-4 h-4 mr-1" />
+              Visualizza online
+            </Button>
           </CardContent>
         </Card>
 

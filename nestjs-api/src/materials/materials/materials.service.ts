@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, MaterialUsage } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { paginate, PaginatedResult } from '../../common/paginated-result';
 import { joinDisplay, fullPersonName } from '../../common/display-name';
@@ -15,6 +15,8 @@ export interface MaterialResponse {
   description: string | null;
   // Decimal → number to ensure JSON numeric type (Prisma Decimal would serialize as string)
   price: number | null;
+  // FIXED | DYNAMIC | BOTH — drives composition-grid filtering on the article page
+  usage: MaterialUsage;
   supplierId: number | null;
   unitmeasurementId: number | null;
   supplier: SupplierResponse | null;
@@ -38,6 +40,7 @@ function toResponse(row: MaterialWithRelations): MaterialResponse {
     code: row.code,
     description: row.description,
     price: row.price !== null ? Number(row.price) : null,
+    usage: row.usage,
     supplierId: row.supplierId,
     unitmeasurementId: row.unitmeasurementId,
     supplier: row.supplier
@@ -97,16 +100,16 @@ export class MaterialsService {
   }
 
   async create(dto: CreateMaterialDto): Promise<MaterialResponse> {
-    const { materialtypeIds, ...fields } = dto;
+    const { materialTypeIds, ...fields } = dto;
     if (fields.supplierId !== undefined) await this.assertSupplierExists(fields.supplierId);
     if (fields.unitmeasurementId !== undefined) await this.assertUnitMeasurementExists(fields.unitmeasurementId);
-    if (materialtypeIds?.length) await this.assertMaterialTypesExist(materialtypeIds);
+    if (materialTypeIds?.length) await this.assertMaterialTypesExist(materialTypeIds);
 
     const row = await this.prisma.material.create({
       data: {
         ...fields,
-        materialtypes: materialtypeIds?.length
-          ? { create: materialtypeIds.map(id => ({ materialtypeId: id })) }
+        materialtypes: materialTypeIds?.length
+          ? { create: materialTypeIds.map(id => ({ materialtypeId: id })) }
           : undefined,
       },
       include: includeRelations,
@@ -116,11 +119,11 @@ export class MaterialsService {
 
   async update(id: number, dto: UpdateMaterialDto): Promise<MaterialResponse> {
     await this.findOne(id);
-    const { materialtypeIds, ...fields } = dto;
+    const { materialTypeIds, ...fields } = dto;
     if (fields.supplierId !== undefined) await this.assertSupplierExists(fields.supplierId);
     if (fields.unitmeasurementId !== undefined) await this.assertUnitMeasurementExists(fields.unitmeasurementId);
-    if (materialtypeIds !== undefined && materialtypeIds.length > 0) {
-      await this.assertMaterialTypesExist(materialtypeIds);
+    if (materialTypeIds !== undefined && materialTypeIds.length > 0) {
+      await this.assertMaterialTypesExist(materialTypeIds);
     }
 
     const row = await this.prisma.material.update({
@@ -128,10 +131,10 @@ export class MaterialsService {
       data: {
         ...fields,
         // Full-replace strategy for materialtypes (mirrors CakePHP HABTM save behaviour)
-        ...(materialtypeIds !== undefined && {
+        ...(materialTypeIds !== undefined && {
           materialtypes: {
             deleteMany: {},
-            create: materialtypeIds.map(mtId => ({ materialtypeId: mtId })),
+            create: materialTypeIds.map(mtId => ({ materialtypeId: mtId })),
           },
         }),
       },

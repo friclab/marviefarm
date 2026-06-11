@@ -25,6 +25,7 @@ model User {
 model Sex {
   id             Int            @id @default(autoincrement())
   code           String
+  description    String?
   modeltypeSexes ModeltypeSex[]
 
   @@map("sexes")
@@ -106,11 +107,21 @@ model Materialtype {
   @@map("materialtypes")
 }
 
+// Whether a material is part of an article's fixed composition (shared by all
+// variants), of the dynamic composition (varies per variant), or usable in both.
+// Drives which materials appear in each composition grid.
+enum MaterialUsage {
+  FIXED
+  DYNAMIC
+  BOTH
+}
+
 model Material {
   id                  Int                          @id @default(autoincrement())
   code                String
   description         String?
   price               Decimal?                     @db.Decimal(10, 2)
+  usage               MaterialUsage                @default(BOTH) @map("composition_usage")
   supplierId          Int?                         @map("supplier_id")
   unitmeasurementId   Int?                         @map("unitmeasurement_id")
   supplier            Supplier?                    @relation(fields: [supplierId], references: [id])
@@ -282,6 +293,9 @@ model OrderHeader {
   description  String?
   date         DateTime?     @db.Date
   discount     Decimal?      @map("discount") @db.Decimal(5, 2)
+  // VAT rate frozen at order creation from customer.vatApplied, so later changes
+  // to the customer's rate don't retroactively alter this order's totals.
+  vatAppliedSnapshot Decimal? @map("vat_applied_snapshot") @db.Decimal(5, 2)
   payment      String?
   note         String?
   customer     Customer      @relation(fields: [customerId], references: [id])
@@ -298,6 +312,9 @@ model OrderDetail {
   fabricId           Int?              @map("fabric_id")
   modeltypeSexSizeId Int?              @map("modeltypessexessize_id")
   quantity           Int?              @map("qta")
+  // Unit price frozen at line creation from fabric.price, so later changes to the
+  // fabric's price don't retroactively alter saved orders' totals.
+  unitPrice          Decimal?          @map("unit_price") @db.Decimal(10, 2)
   note               String?
   orderHeader        OrderHeader       @relation(fields: [orderHeaderId], references: [id])
   article            Article           @relation(fields: [articleId], references: [id])

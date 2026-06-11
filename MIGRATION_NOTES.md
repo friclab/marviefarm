@@ -76,8 +76,9 @@ grandTotal = subtotal + vat
 **Nota produzione**: Puppeteer scarica Chrome (~300MB) a `npm install`. Per Docker: usare `--no-sandbox --disable-dev-shm-usage`. Per ambienti con Chrome pre-installato: impostare `CHROMIUM_PATH=<path>` per bypassare il download.
 
 ### CSV cost calculation
-**PHP**: `FabricsController::calculateCost()` con query UNION diretta e output tabellare.
-**NestJS**: `GET /reports/cost-calculation?multiplier=N` (N opzionale, default 1). Stessa query UNION eseguita con `prisma.$queryRaw`; moltiplicatore applicato in TypeScript al campo `cost`.
+**PHP**: `FabricsController::calculateCost()` con query UNION diretta e output tabellare (TSV). Due parametri dal form: `multiply` (moltiplicatore) e `show_details` (checkbox). Con `show_details` attivo produce il report **dettagliato** (distinta materiali per articolo/variante + riga di riepilogo per variante); disattivo produce il report **sintetico** (solo le righe di riepilogo per variante). Il moltiplicatore è applicato al **subtotale di variante**. Numeri formattati all'italiana (`number_format(x, 3, ',', '.')`). File `costX{n}.csv`, `text/plain`.
+**NestJS**: `GET /reports/cost-calculation?multiplier=N&detailed=true|false` (default `N=1`, `detailed=false`). Replica fedele: stessa query UNION via `prisma.$queryRaw`, stessa struttura gerarchica articolo→variante→materiali, stesso formato TSV, separatori `XXXXXXXXX`, helper `itNum()` per il formato numerico italiano, stesso nome file e content-type.
+**Differenza schema**: la composizione fissa è stata spostata da `fabrics` ad `articles` — il branch `F` ora fa join su `art.fixedcomposition_id` (l'originale usava `f.fixedcomposition_id`).
 
 ---
 

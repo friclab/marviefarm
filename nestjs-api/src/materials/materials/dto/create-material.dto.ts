@@ -1,6 +1,7 @@
 import {
-  IsArray, IsInt, IsNumber, IsOptional, IsPositive, IsString, MaxLength, Min,
+  IsArray, IsEnum, IsInt, IsNumber, IsOptional, IsPositive, IsString, MaxLength, Min,
 } from 'class-validator';
+import { MaterialUsage } from '@prisma/client';
 
 export class CreateMaterialDto {
   @IsString()
@@ -27,10 +28,15 @@ export class CreateMaterialDto {
   @IsPositive()
   unitmeasurementId?: number;
 
+  // Fixed / dynamic / both — defaults to BOTH at the DB level when omitted
+  @IsOptional()
+  @IsEnum(MaterialUsage)
+  usage?: MaterialUsage;
+
   // IDs of MaterialType records to link (full-replace on update)
   @IsOptional()
   @IsArray()
   @IsInt({ each: true })
   @IsPositive({ each: true })
-  materialtypeIds?: number[];
+  materialTypeIds?: number[];
 }

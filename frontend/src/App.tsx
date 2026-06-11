@@ -22,6 +22,8 @@ import CustomersPage from '@/pages/customers/CustomersPage';
 import OrdersPage from '@/pages/orders/OrdersPage';
 import OrderDetailPage from '@/pages/orders/OrderDetailPage';
 import ReportsPage from '@/pages/reports/ReportsPage';
+import CostPreviewPage from '@/pages/reports/CostPreviewPage';
+import MaterialConsumptionPage from '@/pages/reports/MaterialConsumptionPage';
 
 export default function App() {
   return (
@@ -50,6 +52,8 @@ export default function App() {
           <Route path="/orders" element={<OrdersPage />} />
           <Route path="/orders/:id" element={<OrderDetailPage />} />
           <Route path="/reports" element={<ReportsPage />} />
+          <Route path="/reports/cost-preview" element={<CostPreviewPage />} />
+          <Route path="/reports/material-consumption" element={<MaterialConsumptionPage />} />
         </Route>
       </Routes>
     </AuthProvider>

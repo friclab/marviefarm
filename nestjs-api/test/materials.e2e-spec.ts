@@ -194,7 +194,7 @@ describe('Materials (e2e)', () => {
         price: 12.5,
         supplierId,
         unitmeasurementId: umId,
-        materialtypeIds: [mt1Id, mt2Id],
+        materialTypeIds: [mt1Id, mt2Id],
       }).expect(201);
 
       expect(res.body.code).toBe('C001');
@@ -217,7 +217,7 @@ describe('Materials (e2e)', () => {
 
     it('PATCH /materials/:id → replaces materialtypes (full-replace)', async () => {
       const res = await patch(`/materials/${materialId}`, {
-        materialtypeIds: [mt1Id],   // remove mt2, keep only mt1
+        materialTypeIds: [mt1Id],   // remove mt2, keep only mt1
       }).expect(200);
       expect(res.body.materialtypes).toHaveLength(1);
       expect(res.body.materialtypes[0].id).toBe(mt1Id);
@@ -226,8 +226,8 @@ describe('Materials (e2e)', () => {
     it('PATCH /materials/:id → bad supplierId → 400', () =>
       patch(`/materials/${materialId}`, { supplierId: 9999999 }).expect(400));
 
-    it('POST /materials → bad materialtypeIds → 400', () =>
-      post('/materials', { code: 'BAD', materialtypeIds: [9999999] }).expect(400));
+    it('POST /materials → bad materialTypeIds → 400', () =>
+      post('/materials', { code: 'BAD', materialTypeIds: [9999999] }).expect(400));
 
     it('GET /materials/9999999 → 404', () => get('/materials/9999999').expect(404));
 

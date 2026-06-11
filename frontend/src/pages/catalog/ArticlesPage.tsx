@@ -122,7 +122,12 @@ function ArticleForm({ item, onSuccess, onCancel }: { item?: Article; onSuccess:
 const columns: Column<Article>[] = [
   { header: 'Nome', cell: (a) => a.name },
   { header: 'Descrizione', cell: (a) => a.description ?? '—' },
-  { header: 'Comb.', cell: (a) => a.modeltypesSex.displayName },
+  { header: 'Tipo × Sesso', cell: (a) => (
+    <div className="flex gap-1">
+      <Badge variant="outline">{a.modeltypesSex.modeltype.description ?? a.modeltypesSex.modeltype.code}</Badge>
+      <Badge variant="secondary">{a.modeltypesSex.sex.description ?? a.modeltypesSex.sex.code}</Badge>
+    </div>
+  )},
   { header: 'Progetti', cell: (a) => <div className="flex gap-1">{a.projects.map(p => <Badge key={p.id} variant="secondary">{p.name}</Badge>)}</div> },
 ];
 

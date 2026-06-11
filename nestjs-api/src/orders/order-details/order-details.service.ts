@@ -16,6 +16,7 @@ export interface OrderDetailResponse {
   fabricId: number | null;
   modeltypeSexSizeId: number | null;
   quantity: number | null;
+  unitPrice: number | null;
   note: string | null;
   article: { id: number; name: string; description: string | null; displayName: string };
   fabric: { id: number; code: string; description: string | null; price: number | null; displayName: string } | null;
@@ -71,6 +72,7 @@ function toResponse(d: OrderDetailWithRelations): OrderDetailResponse {
     fabricId: d.fabricId,
     modeltypeSexSizeId: d.modeltypeSexSizeId,
     quantity: d.quantity,
+    unitPrice: d.unitPrice !== null ? Number(d.unitPrice) : null,
     note: d.note,
     article: {
       id: d.article.id,
@@ -133,22 +135,28 @@ export class OrderDetailsService {
   async create(dto: CreateOrderDetailDto): Promise<OrderDetailResponse> {
     await this.assertOrderHeaderExists(dto.orderHeaderId);
     await this.assertArticleExists(dto.articleId);
-    if (dto.fabricId !== undefined) await this.assertFabricExists(dto.fabricId);
+    // Freeze the fabric's current price onto the line at creation time.
+    const unitPrice = dto.fabricId !== undefined ? await this.fabricPriceOrThrow(dto.fabricId) : null;
     if (dto.modeltypeSexSizeId !== undefined) await this.assertSizeExists(dto.modeltypeSexSizeId);
 
-    const row = await this.prisma.orderDetail.create({ data: dto, include: includeRelations });
+    const row = await this.prisma.orderDetail.create({
+      data: { ...dto, unitPrice },
+      include: includeRelations,
+    });
     return toResponse(row);
   }
 
   async update(id: number, dto: UpdateOrderDetailDto): Promise<OrderDetailResponse> {
     await this.findOne(id);
     if (dto.articleId !== undefined) await this.assertArticleExists(dto.articleId);
-    if (dto.fabricId !== undefined) await this.assertFabricExists(dto.fabricId);
     if (dto.modeltypeSexSizeId !== undefined) await this.assertSizeExists(dto.modeltypeSexSizeId);
+    // Re-freeze the unit price only when the fabric itself changes.
+    const repriced =
+      dto.fabricId !== undefined ? { unitPrice: await this.fabricPriceOrThrow(dto.fabricId) } : {};
 
     const row = await this.prisma.orderDetail.update({
       where: { id },
-      data: dto,
+      data: { ...dto, ...repriced },
       include: includeRelations,
     });
     return toResponse(row);
@@ -163,7 +171,8 @@ export class OrderDetailsService {
   async batchCreate(dto: BatchCreateOrderDetailDto): Promise<{ created: number }> {
     await this.assertOrderHeaderExists(dto.orderHeaderId);
     await this.assertArticleExists(dto.articleId);
-    await this.assertFabricExists(dto.fabricId);
+    // Freeze the fabric's current price; all batch lines share the same fabric.
+    const unitPrice = await this.fabricPriceOrThrow(dto.fabricId);
 
     const validItems = dto.items.filter(item => item.quantity > 0);
     if (validItems.length === 0) return { created: 0 };
@@ -177,6 +186,7 @@ export class OrderDetailsService {
             fabricId: dto.fabricId,
             modeltypeSexSizeId: item.modeltypeSexSizeId,
             quantity: item.quantity,
+            unitPrice,
             note: dto.note,
           },
         });
@@ -257,9 +267,11 @@ export class OrderDetailsService {
     if (!exists) throw new BadRequestException(`Article ${id} does not exist`);
   }
 
-  private async assertFabricExists(id: number): Promise<void> {
-    const exists = await this.prisma.fabric.findUnique({ where: { id } });
-    if (!exists) throw new BadRequestException(`Fabric ${id} does not exist`);
+  // Validates the fabric exists and returns its current price to snapshot onto the line.
+  private async fabricPriceOrThrow(id: number): Promise<Prisma.Decimal | null> {
+    const fabric = await this.prisma.fabric.findUnique({ where: { id } });
+    if (!fabric) throw new BadRequestException(`Fabric ${id} does not exist`);
+    return fabric.price;
   }
 
   private async assertSizeExists(id: number): Promise<void> {

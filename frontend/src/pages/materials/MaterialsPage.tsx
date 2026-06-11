@@ -10,11 +10,19 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import api from '@/lib/api';
-import type { Material, UnitMeasurement, MaterialType, Supplier, Paginated } from '@/types/api';
+import type { Material, MaterialUsage, UnitMeasurement, MaterialType, Supplier, Paginated } from '@/types/api';
+
+const USAGE_LABELS: Record<MaterialUsage, string> = {
+  FIXED: 'Fisso',
+  DYNAMIC: 'Dinamico',
+  BOTH: 'Entrambi',
+};
 
 const schema = z.object({
   code: z.string().min(1, 'Obbligatorio'),
   description: z.string().optional(),
+  price: z.coerce.number().min(0).optional().nullable(),
+  usage: z.enum(['FIXED', 'DYNAMIC', 'BOTH']),
   unitmeasurementId: z.coerce.number().positive('Obbligatorio'),
   supplierId: z.coerce.number().optional().nullable(),
   materialTypeIds: z.array(z.number()).optional(),
@@ -32,6 +40,8 @@ function MaterialForm({ item, onSuccess, onCancel }: { item?: Material; onSucces
     defaultValues: {
       code: item?.code ?? '',
       description: item?.description ?? '',
+      price: item?.price ?? null,
+      usage: item?.usage ?? 'BOTH',
       unitmeasurementId: item?.unitmeasurementId ?? 0,
       supplierId: item?.supplierId ?? null,
       materialTypeIds: item?.materialtypes.map(t => t.id) ?? [],
@@ -64,6 +74,25 @@ function MaterialForm({ item, onSuccess, onCancel }: { item?: Material; onSucces
         <div className="space-y-1">
           <Label>Descrizione</Label>
           <Input {...register('description')} />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-1">
+          <Label>Prezzo</Label>
+          <Input {...register('price')} type="number" step="0.01" min="0" placeholder="0.00" />
+          {errors.price && <p className="text-xs text-destructive">{errors.price.message}</p>}
+        </div>
+        <div className="space-y-1">
+          <Label>Composizione</Label>
+          <Select value={watch('usage')} onValueChange={(v) => setValue('usage', v as MaterialUsage)}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {(['FIXED', 'DYNAMIC', 'BOTH'] as const).map(u => (
+                <SelectItem key={u} value={u}>{USAGE_LABELS[u]}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">Determina in quale griglia compare il materiale</p>
         </div>
       </div>
       <div className="grid grid-cols-2 gap-4">
@@ -107,6 +136,8 @@ function MaterialForm({ item, onSuccess, onCancel }: { item?: Material; onSucces
 const columns: Column<Material>[] = [
   { header: 'Codice', cell: (m) => m.code },
   { header: 'Descrizione', cell: (m) => m.description ?? '—' },
+  { header: 'Prezzo', cell: (m) => m.price != null ? `€ ${m.price.toFixed(2)}` : '—' },
+  { header: 'Composizione', cell: (m) => <Badge variant="outline">{USAGE_LABELS[m.usage]}</Badge> },
   { header: 'U.M.', cell: (m) => m.unitmeasurement?.code ?? '—' },
   { header: 'Tipi', cell: (m) => <div className="flex gap-1">{m.materialtypes.map(t => <Badge key={t.id} variant="secondary">{t.code}</Badge>)}</div> },
 ];

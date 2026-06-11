@@ -1,9 +1,9 @@
 import {
-  Controller, Get, Param, ParseIntPipe, ParseFloatPipe,
+  Controller, Get, Param, ParseIntPipe, ParseFloatPipe, ParseBoolPipe,
   Query, Res, StreamableFile, DefaultValuePipe,
 } from '@nestjs/common';
 import { Response } from 'express';
-import { ReportsService } from './reports.service';
+import { ReportsService, CostPreview, MaterialConsumption } from './reports.service';
 
 @Controller('reports')
 export class ReportsController {
@@ -14,12 +14,31 @@ export class ReportsController {
   @Get('cost-calculation')
   async costCalculation(
     @Query('multiplier', new DefaultValuePipe(1), ParseFloatPipe) multiplier: number,
+    @Query('detailed', new DefaultValuePipe(false), ParseBoolPipe) detailed: boolean,
     @Res({ passthrough: true }) res: Response,
   ): Promise<StreamableFile> {
-    const buffer = await this.service.generateCostCsv(multiplier);
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', 'attachment; filename="cost_calculation.csv"');
+    const buffer = await this.service.generateCostCsv(multiplier, detailed);
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="costX${multiplier}.csv"`);
     return new StreamableFile(buffer);
+  }
+
+  // ── Cost calculation preview (interactive JSON) ────────────────────────────
+
+  @Get('cost-preview')
+  costPreview(
+    @Query('multiplier', new DefaultValuePipe(1), ParseFloatPipe) multiplier: number,
+  ): Promise<CostPreview> {
+    return this.service.getCostPreview(multiplier);
+  }
+
+  // ── Material consumption from orders (interactive JSON) ─────────────────────
+
+  @Get('material-consumption')
+  materialConsumption(
+    @Query('orderId', new ParseIntPipe({ optional: true })) orderId?: number,
+  ): Promise<MaterialConsumption> {
+    return this.service.getMaterialConsumption(orderId);
   }
 
   // ── Articles list PDF ──────────────────────────────────────────────────────

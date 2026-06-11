@@ -7,11 +7,12 @@ import { UpdateSexDto } from './dto/update-sex.dto';
 export interface SexResponse {
   id: number;
   code: string;
+  description: string | null;
   displayName: string;
 }
 
-function toResponse(sex: { id: number; code: string }): SexResponse {
-  return { ...sex, displayName: sex.code };
+function toResponse(sex: { id: number; code: string; description: string | null }): SexResponse {
+  return { ...sex, displayName: sex.description ?? sex.code };
 }
 
 @Injectable()
@@ -37,12 +38,12 @@ export class SexesService {
   }
 
   async create(dto: CreateSexDto): Promise<SexResponse> {
-    const sex = await this.prisma.sex.create({ data: { code: dto.code } });
+    const sex = await this.prisma.sex.create({ data: { code: dto.code, description: dto.description } });
     return toResponse(sex);
   }
 
   async update(id: number, dto: UpdateSexDto): Promise<SexResponse> {
-    await this.findOne(id); // throws 404 if missing
+    await this.findOne(id);
     const sex = await this.prisma.sex.update({ where: { id }, data: dto });
     return toResponse(sex);
   }

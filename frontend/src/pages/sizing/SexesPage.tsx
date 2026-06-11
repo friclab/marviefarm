@@ -10,14 +10,17 @@ import { Label } from '@/components/ui/label';
 import api from '@/lib/api';
 import type { Sex } from '@/types/api';
 
-const schema = z.object({ code: z.string().min(1, 'Obbligatorio') });
+const schema = z.object({
+  code: z.string().min(1, 'Obbligatorio').max(10),
+  description: z.string().optional(),
+});
 type F = z.infer<typeof schema>;
 
 function SexForm({ item, onSuccess, onCancel }: { item?: Sex; onSuccess: () => void; onCancel: () => void }) {
   const qc = useQueryClient();
   const { register, handleSubmit, formState: { errors } } = useForm<F>({
     resolver: zodResolver(schema),
-    defaultValues: { code: item?.code ?? '' },
+    defaultValues: { code: item?.code ?? '', description: item?.description ?? '' },
   });
   const m = useMutation({
     mutationFn: (d: F) => item ? api.patch(`/sexes/${item.id}`, d) : api.post('/sexes', d),
@@ -26,10 +29,16 @@ function SexForm({ item, onSuccess, onCancel }: { item?: Sex; onSuccess: () => v
   });
   return (
     <form onSubmit={handleSubmit((d) => m.mutate(d))} className="space-y-4">
-      <div className="space-y-1">
-        <Label>Codice</Label>
-        <Input {...register('code')} autoFocus />
-        {errors.code && <p className="text-xs text-destructive">{errors.code.message}</p>}
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-1">
+          <Label>Codice</Label>
+          <Input {...register('code')} autoFocus />
+          {errors.code && <p className="text-xs text-destructive">{errors.code.message}</p>}
+        </div>
+        <div className="space-y-1">
+          <Label>Descrizione</Label>
+          <Input {...register('description')} placeholder="es. Woman" />
+        </div>
       </div>
       <div className="flex justify-end gap-2">
         <Button type="button" variant="outline" onClick={onCancel}>Annulla</Button>
@@ -41,6 +50,7 @@ function SexForm({ item, onSuccess, onCancel }: { item?: Sex; onSuccess: () => v
 
 const columns: Column<Sex>[] = [
   { header: 'Codice', cell: (s) => s.code },
+  { header: 'Descrizione', cell: (s) => s.description ?? '—' },
 ];
 
 export default function SexesPage() {

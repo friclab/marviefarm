@@ -8,6 +8,7 @@ import { PaginationDto } from '../../common/pagination.dto';
 import { PaginatedResult } from '../../common/paginated-result';
 import { CreateFabricDto } from './dto/create-fabric.dto';
 import { UpdateFabricDto } from './dto/update-fabric.dto';
+import { BatchCreateFabricDto } from './dto/batch-create-fabric.dto';
 import { FabricsService, FabricResponse } from './fabrics.service';
 
 class FabricsQueryDto extends PaginationDto {
@@ -30,6 +31,12 @@ export class FabricsController {
   @Get(':id')
   findOne(@Param('id', ParseIntPipe) id: number): Promise<FabricResponse> {
     return this.service.findOne(id);
+  }
+
+  // Static route — must precede the `:id` routes (NestJS resolves top-to-bottom).
+  @Post('batch')
+  batchCreate(@Body() dto: BatchCreateFabricDto): Promise<{ created: number }> {
+    return this.service.batchCreate(dto);
   }
 
   @Post()

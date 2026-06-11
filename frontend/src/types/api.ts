@@ -6,7 +6,7 @@ export interface Paginated<T> {
 }
 
 // ── Sizing ────────────────────────────────────────────────────────────────────
-export interface Sex { id: number; code: string; displayName: string }
+export interface Sex { id: number; code: string; description: string | null; displayName: string }
 export interface Modeltype { id: number; code: string; description: string | null; displayName: string }
 export interface Size { id: number; code: string; displayName: string }
 export interface ModeltypeSex {
@@ -17,13 +17,22 @@ export interface ModeltypeSexSize {
   id: number; modeltypeSexId: number; sizeId: number; displayName: string;
   modeltypeSex: ModeltypeSex; size: Size;
 }
+export interface ModeltypeSexDependents {
+  orderCount: number;
+  sizeCount: number;
+  articles: { id: number; name: string }[];
+  canDelete: boolean;
+  canReassign: boolean;
+}
 
 // ── Materials ─────────────────────────────────────────────────────────────────
 export interface Supplier { id: number; company: string | null; name: string | null; surname: string | null; displayName: string }
 export interface UnitMeasurement { id: number; code: string; description: string | null; displayName: string }
 export interface MaterialType { id: number; code: string; description: string | null; displayName: string }
+export type MaterialUsage = 'FIXED' | 'DYNAMIC' | 'BOTH';
 export interface Material {
-  id: number; code: string; description: string | null; displayName: string;
+  id: number; code: string; description: string | null; price: number | null; displayName: string;
+  usage: MaterialUsage;
   unitmeasurementId: number | null; unitmeasurement: UnitMeasurement | null;
   materialtypes: MaterialType[];
   supplierId: number | null; supplier: Supplier | null;
@@ -100,3 +109,46 @@ export interface OrderDetail {
 }
 export interface FabricOption { id: number; code: string; description: string | null; displayName: string }
 export interface SizeOption { modeltypeSexSizeId: number; sizeCode: string; displayName: string }
+
+// ── Reports ───────────────────────────────────────────────────────────────────
+export interface CostPreviewMaterial {
+  compoType: 'F' | 'D';
+  compoId: number;
+  code: string;
+  description: string | null;
+  unit: string;
+  quantity: number;
+  price: number;
+  cost: number;
+}
+export interface CostPreviewVariant {
+  code: string;
+  description: string | null;
+  materials: CostPreviewMaterial[];
+  total: number;
+  totalWithMultiplier: number;
+}
+export interface CostPreviewArticle {
+  name: string;
+  description: string | null;
+  variants: CostPreviewVariant[];
+}
+export interface CostPreview {
+  multiplier: number;
+  articles: CostPreviewArticle[];
+}
+
+export interface MaterialConsumptionRow {
+  materialId: number;
+  code: string;
+  description: string | null;
+  unit: string | null;
+  quantity: number;
+  price: number | null;
+  cost: number | null;
+}
+export interface MaterialConsumption {
+  orderId: number | null;
+  rows: MaterialConsumptionRow[];
+  totalCost: number;
+}

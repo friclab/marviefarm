@@ -1,0 +1,19 @@
+# Compiled output
+/dist
+/node_modules
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Prisma / misc
+*.tsbuildinfo
+
+# OS
+.DS_Store

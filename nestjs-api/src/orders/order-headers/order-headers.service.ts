@@ -5,23 +5,9 @@ import { paginate, PaginatedResult } from '../../common/paginated-result';
 import { joinDisplay, fullPersonName } from '../../common/display-name';
 import { CreateOrderHeaderDto } from './dto/create-order-header.dto';
 import { UpdateOrderHeaderDto } from './dto/update-order-header.dto';
+import { computeOrderTotals, OrderTotals } from '../order-totals';
 
-interface CustomerSnippet {
-  id: number;
-  company: string | null;
-  name: string | null;
-  surname: string | null;
-  vatApplied: Prisma.Decimal | null;
-  displayName: string;
-}
-
-export interface OrderTotals {
-  partialTotal: number;
-  discountAmount: number;
-  subtotal: number;
-  vat: number;
-  grandTotal: number;
-}
+export { OrderTotals };
 
 export interface OrderHeaderListItem {
   id: number;
@@ -36,6 +22,7 @@ export interface OrderHeaderListItem {
   displayName: string;
   customer: { id: number; company: string | null; name: string | null; surname: string | null; displayName: string };
   collection: { id: number; name: string } | null;
+  totals: OrderTotals;
 }
 
 export interface OrderDetailSnippet {
@@ -45,6 +32,7 @@ export interface OrderDetailSnippet {
   fabricId: number | null;
   modeltypeSexSizeId: number | null;
   quantity: number | null;
+  unitPrice: number | null;
   note: string | null;
   article: { id: number; name: string; description: string | null; displayName: string };
   fabric: { id: number; code: string; description: string | null; price: number | null; displayName: string } | null;
@@ -67,6 +55,8 @@ export interface OrderHeaderDetailResponse extends OrderHeaderListItem {
 const listInclude = {
   customer: true,
   collection: true,
+  // Totals read the frozen unitPrice column on orderDetails — no fabric join needed.
+  orderDetails: true,
 } as const;
 
 const detailInclude = {
@@ -113,30 +103,13 @@ function toListItem(row: OrderHeaderList): OrderHeaderListItem {
       displayName: customerDisplayName(row.customer),
     },
     collection: row.collection ? { id: row.collection.id, name: row.collection.name } : null,
+    totals: computeOrderTotals(row.orderDetails, row.discount, row.vatAppliedSnapshot),
   };
-}
-
-function calculateTotals(
-  details: Array<{ quantity: number | null; fabric: { price: Prisma.Decimal | null } | null }>,
-  discount: Prisma.Decimal | null,
-  vatApplied: Prisma.Decimal | null,
-): OrderTotals {
-  const partialTotal = details.reduce(
-    (sum, d) => sum + (d.quantity ?? 0) * Number(d.fabric?.price ?? 0),
-    0,
-  );
-  const discountPct = Number(discount ?? 0);
-  const vatPct = Number(vatApplied ?? 0);
-  const discountAmount = partialTotal * discountPct / 100;
-  const subtotal = partialTotal - discountAmount;
-  const vat = vatPct * subtotal / 100;
-  const grandTotal = subtotal + vat;
-  return { partialTotal, discountAmount, subtotal, vat, grandTotal };
 }
 
 function toDetailResponse(row: OrderHeaderDetail): OrderHeaderDetailResponse {
   const base = toListItem(row as unknown as OrderHeaderList);
-  const totals = calculateTotals(row.orderDetails, row.discount, row.customer.vatApplied);
+  const totals = computeOrderTotals(row.orderDetails, row.discount, row.vatAppliedSnapshot);
 
   const orderDetails: OrderDetailSnippet[] = row.orderDetails.map(d => ({
     id: d.id,
@@ -145,6 +118,7 @@ function toDetailResponse(row: OrderHeaderDetail): OrderHeaderDetailResponse {
     fabricId: d.fabricId,
     modeltypeSexSizeId: d.modeltypeSexSizeId,
     quantity: d.quantity,
+    unitPrice: d.unitPrice !== null ? Number(d.unitPrice) : null,
     note: d.note,
     article: {
       id: d.article.id,
@@ -218,13 +192,16 @@ export class OrderHeadersService {
   }
 
   async create(dto: CreateOrderHeaderDto): Promise<OrderHeaderDetailResponse> {
-    await this.assertCustomerExists(dto.customerId);
+    const customer = await this.prisma.customer.findUnique({ where: { id: dto.customerId } });
+    if (!customer) throw new BadRequestException(`Customer ${dto.customerId} does not exist`);
     if (dto.collectionId !== undefined) await this.assertCollectionExists(dto.collectionId);
 
     const row = await this.prisma.orderHeader.create({
       data: {
         ...dto,
         date: dto.date ? new Date(dto.date) : undefined,
+        // Freeze the customer's VAT rate so later changes don't alter this order.
+        vatAppliedSnapshot: customer.vatApplied,
       },
       include: detailInclude,
     });
