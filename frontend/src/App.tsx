@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from '@/lib/auth';
+import { CollectionProvider } from '@/lib/collection';
 import Layout from '@/components/app/Layout';
 import LoginPage from '@/pages/LoginPage';
 import SexesPage from '@/pages/sizing/SexesPage';
@@ -28,6 +29,7 @@ import MaterialConsumptionPage from '@/pages/reports/MaterialConsumptionPage';
 export default function App() {
   return (
     <AuthProvider>
+      <CollectionProvider>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route element={<Layout />}>
@@ -56,6 +58,7 @@ export default function App() {
           <Route path="/reports/material-consumption" element={<MaterialConsumptionPage />} />
         </Route>
       </Routes>
+      </CollectionProvider>
     </AuthProvider>
   );
 }

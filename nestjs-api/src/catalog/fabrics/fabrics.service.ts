@@ -104,8 +104,18 @@ function toResponse(row: FabricWithRelations): FabricResponse {
 export class FabricsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(page: number, limit: number, articleId?: number): Promise<PaginatedResult<FabricResponse>> {
-    const where = articleId !== undefined ? { articleId } : undefined;
+  async findAll(
+    page: number,
+    limit: number,
+    articleId?: number,
+    collectionId?: number,
+  ): Promise<PaginatedResult<FabricResponse>> {
+    // Season scope reaches through fabric -> article -> project. Combined with the
+    // existing per-article filter; both absent => show all.
+    const where: Prisma.FabricWhereInput = {
+      ...(articleId !== undefined && { articleId }),
+      ...(collectionId !== undefined && { article: { project: { collectionId } } }),
+    };
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.fabric.findMany({
         skip: (page - 1) * limit,

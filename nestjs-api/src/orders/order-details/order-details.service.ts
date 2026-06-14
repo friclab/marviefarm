@@ -135,6 +135,7 @@ export class OrderDetailsService {
   async create(dto: CreateOrderDetailDto): Promise<OrderDetailResponse> {
     await this.assertOrderHeaderExists(dto.orderHeaderId);
     await this.assertArticleExists(dto.articleId);
+    await this.assertSameSeason(dto.orderHeaderId, dto.articleId);
     // Freeze the fabric's current price onto the line at creation time.
     const unitPrice = dto.fabricId !== undefined ? await this.fabricPriceOrThrow(dto.fabricId) : null;
     if (dto.modeltypeSexSizeId !== undefined) await this.assertSizeExists(dto.modeltypeSexSizeId);
@@ -171,6 +172,7 @@ export class OrderDetailsService {
   async batchCreate(dto: BatchCreateOrderDetailDto): Promise<{ created: number }> {
     await this.assertOrderHeaderExists(dto.orderHeaderId);
     await this.assertArticleExists(dto.articleId);
+    await this.assertSameSeason(dto.orderHeaderId, dto.articleId);
     // Freeze the fabric's current price; all batch lines share the same fabric.
     const unitPrice = await this.fabricPriceOrThrow(dto.fabricId);
 
@@ -265,6 +267,33 @@ export class OrderDetailsService {
   private async assertArticleExists(id: number): Promise<void> {
     const exists = await this.prisma.article.findUnique({ where: { id } });
     if (!exists) throw new BadRequestException(`Article ${id} does not exist`);
+  }
+
+  // Req. 2 (soft): an order line's article must belong to the order's season. Only
+  // enforced when BOTH the order and the article carry a collection — legacy rows
+  // with either side null are left untouched.
+  private async assertSameSeason(orderHeaderId: number, articleId: number): Promise<void> {
+    const [order, article] = await Promise.all([
+      this.prisma.orderHeader.findUnique({
+        where: { id: orderHeaderId },
+        select: { collectionId: true },
+      }),
+      this.prisma.article.findUnique({
+        where: { id: articleId },
+        select: { project: { select: { collectionId: true } } },
+      }),
+    ]);
+    const orderCollectionId = order?.collectionId ?? null;
+    const articleCollectionId = article?.project?.collectionId ?? null;
+    if (
+      orderCollectionId !== null &&
+      articleCollectionId !== null &&
+      orderCollectionId !== articleCollectionId
+    ) {
+      throw new BadRequestException(
+        `Article belongs to a different season (collection ${articleCollectionId}) than the order (collection ${orderCollectionId})`,
+      );
+    }
   }
 
   // Validates the fabric exists and returns its current price to snapshot onto the line.

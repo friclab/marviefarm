@@ -102,6 +102,8 @@ model Materialtype {
   id          Int                    @id @default(autoincrement())
   code        String
   description String?
+  // Drives seasonality: materials of a seasonal type are scoped to a collection.
+  seasonal    Boolean                @default(false)
   materials   MaterialMaterialtype[]
 
   @@map("materialtypes")
@@ -124,8 +126,11 @@ model Material {
   usage               MaterialUsage                @default(BOTH) @map("composition_usage")
   supplierId          Int?                         @map("supplier_id")
   unitmeasurementId   Int?                         @map("unitmeasurement_id")
+  // Seasonal materials (e.g. fabrics) are bound to one collection; null = perennial/legacy.
+  collectionId        Int?                         @map("collection_id")
   supplier            Supplier?                    @relation(fields: [supplierId], references: [id])
   unitmeasurement     Unitmeasurement?             @relation(fields: [unitmeasurementId], references: [id])
+  collection          Collection?                  @relation(fields: [collectionId], references: [id])
   materialtypes       MaterialMaterialtype[]
   dynamicCompositions DynamicCompositionMaterial[]
   fixedCompositions   FixedCompositionMaterial[]
@@ -202,32 +207,26 @@ model Article {
   image              Bytes?
   modeltypesSexId    Int               @map("modeltypes_sex_id")
   fixedCompositionId Int?              @map("fixedcomposition_id")
+  // 1:N season membership (replaces articles_projects pivot); null = legacy/unassigned.
+  projectId          Int?              @map("project_id")
   modeltypesSex      ModeltypeSex      @relation(fields: [modeltypesSexId], references: [id])
   fixedComposition   FixedComposition? @relation(fields: [fixedCompositionId], references: [id])
+  project            Project?          @relation(fields: [projectId], references: [id])
   fabrics            Fabric[]
   orderDetails       OrderDetail[]
-  projects           ArticleProject[]
 
   @@map("articles")
 }
 
 model Project {
-  id          Int                @id @default(autoincrement())
-  name        String
-  articles    ArticleProject[]
-  collections CollectionProject[]
+  id           Int                @id @default(autoincrement())
+  name         String
+  // 1:N season membership (replaces collections_projects pivot); null = legacy/unassigned.
+  collectionId Int?               @map("collection_id")
+  collection   Collection?        @relation(fields: [collectionId], references: [id])
+  articles     Article[]
 
   @@map("projects")
-}
-
-model ArticleProject {
-  articleId Int     @map("article_id")
-  projectId Int     @map("project_id")
-  article   Article @relation(fields: [articleId], references: [id])
-  project   Project @relation(fields: [projectId], references: [id])
-
-  @@id([articleId, projectId])
-  @@map("articles_projects")
 }
 
 model Fabric {
@@ -269,20 +268,14 @@ model Customer {
 model Collection {
   id       Int                @id @default(autoincrement())
   name     String
+  // Season label/ordering; nullable + additive (legacy rows may not have them).
+  type     String?            // "SS" | "FW"
+  year     Int?
   orders   OrderHeader[]
-  projects CollectionProject[]
+  projects Project[]
+  materials Material[]
 
   @@map("collections")
-}
-
-model CollectionProject {
-  collectionId Int        @map("collection_id")
-  projectId    Int        @map("project_id")
-  collection   Collection @relation(fields: [collectionId], references: [id])
-  project      Project    @relation(fields: [projectId], references: [id])
-
-  @@id([collectionId, projectId])
-  @@map("collections_projects")
 }
 
 model OrderHeader {

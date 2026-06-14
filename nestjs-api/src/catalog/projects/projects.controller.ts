@@ -2,7 +2,7 @@ import {
   Body, Controller, Delete, Get, HttpCode, HttpStatus,
   Param, ParseIntPipe, Patch, Post, Query,
 } from '@nestjs/common';
-import { PaginationDto } from '../../common/pagination.dto';
+import { ScopedPaginationDto } from '../../common/scoped-pagination.dto';
 import { PaginatedResult } from '../../common/paginated-result';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
@@ -13,8 +13,8 @@ export class ProjectsController {
   constructor(private readonly service: ProjectsService) {}
 
   @Get()
-  findAll(@Query() pagination: PaginationDto): Promise<PaginatedResult<ProjectResponse>> {
-    return this.service.findAll(pagination.page, pagination.limit);
+  findAll(@Query() query: ScopedPaginationDto): Promise<PaginatedResult<ProjectResponse>> {
+    return this.service.findAll(query.page, query.limit, query.collectionId);
   }
 
   @Get(':id')

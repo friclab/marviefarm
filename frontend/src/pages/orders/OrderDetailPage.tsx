@@ -262,13 +262,14 @@ export default function OrderDetailPage() {
               <th className="text-left p-3 font-medium">Tessuto</th>
               <th className="text-left p-3 font-medium">Taglia</th>
               <th className="text-right p-3 font-medium">Qtà</th>
+              <th className="text-right p-3 font-medium">Prezzo</th>
               <th className="text-left p-3 font-medium">Note</th>
               <th className="text-right p-3 font-medium w-24">Azioni</th>
             </tr>
           </thead>
           <tbody>
             {(!order.orderDetails || order.orderDetails.length === 0) && (
-              <tr><td colSpan={6} className="text-center p-8 text-muted-foreground">Nessuna riga</td></tr>
+              <tr><td colSpan={7} className="text-center p-8 text-muted-foreground">Nessuna riga</td></tr>
             )}
             {order.orderDetails?.map(d => (
               <tr key={d.id} className="border-b last:border-0 hover:bg-muted/30">
@@ -276,6 +277,7 @@ export default function OrderDetailPage() {
                 <td className="p-3">{d.fabric?.code ?? '—'}</td>
                 <td className="p-3">{d.modeltypeSexSize?.size.code ?? '—'}</td>
                 <td className="p-3 text-right font-medium">{d.quantity}</td>
+                <td className="p-3 text-right">{d.unitPrice !== null ? fmtEur(d.unitPrice) : '—'}</td>
                 <td className="p-3 text-muted-foreground">{d.note ?? ''}</td>
                 <td className="p-3">
                   <div className="flex gap-1 justify-end">

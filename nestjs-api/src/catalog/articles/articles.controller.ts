@@ -6,7 +6,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 import { memoryStorage } from 'multer';
-import { PaginationDto } from '../../common/pagination.dto';
+import { ScopedPaginationDto } from '../../common/scoped-pagination.dto';
 import { PaginatedResult } from '../../common/paginated-result';
 import { Public } from '../../auth/public.decorator';
 import { CreateArticleDto } from './dto/create-article.dto';
@@ -18,8 +18,8 @@ export class ArticlesController {
   constructor(private readonly service: ArticlesService) {}
 
   @Get()
-  findAll(@Query() pagination: PaginationDto): Promise<PaginatedResult<ArticleResponse>> {
-    return this.service.findAll(pagination.page, pagination.limit);
+  findAll(@Query() query: ScopedPaginationDto): Promise<PaginatedResult<ArticleResponse>> {
+    return this.service.findAll(query.page, query.limit, query.collectionId);
   }
 
   @Get(':id')

@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import api from '@/lib/api';
+import { useSeasonScopedParams } from '@/lib/collection';
 import type { Fabric, Article, DynamicComposition, Paginated } from '@/types/api';
 import { fmtEur } from '@/lib/utils';
 
@@ -100,12 +101,14 @@ const columns: Column<Fabric>[] = [
 ];
 
 export default function FabricsPage() {
+  const scoped = useSeasonScopedParams();
   return (
     <CrudPage<Fabric>
       title="Tessuti"
       endpoint="/fabrics"
       queryKey="fabrics"
       columns={columns}
+      extraParams={scoped}
       FormComponent={FabricForm}
       createLabel="Nuovo tessuto"
     />

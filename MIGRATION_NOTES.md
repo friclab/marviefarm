@@ -140,6 +140,36 @@ Sostituita da `hasMany Fabric` (FK `article_id` su `fabrics`). La tabella `artic
 
 ---
 
+## Gestione "stagione corrente" (Collection = Season)
+
+Concettualmente `Collection` **è** la stagione (la tabella resta `collections`, nessun rename: churn DB inutile). Arricchita in modo additivo con `type` (`SS`/`FW`, nullable) e `year` (nullable) — servono solo per ordinare ed auto-selezionare la stagione più recente; nessun vincolo `unique` (i dati legacy potrebbero non rispettarlo). `displayName` = `"SS 2027 — <name>"` quando etichettata, altrimenti il solo nome.
+
+### (a) Collasso M:N → 1:N (giustificato dai dati)
+Le pivot `collections_projects` e `articles_projects` non sono **mai** state usate come vere M:N: sul DB live erano 1 collection / 1 project / 25 articoli, **1** riga in `collections_projects`, **25** in `articles_projects`, **zero** multi-membership e zero orfani. Convertirle in FK dirette è una semplificazione a costo dati nullo, non churn rischioso, e impone i requisiti a livello di schema:
+- `projects.collection_id` (FK 1:N, nullable) sostituisce `collections_projects`.
+- `articles.project_id` (FK 1:N, nullable) sostituisce `articles_projects`.
+
+Catena risultante: **Article → Project → Collection**. La stagione di un articolo è univoca e derivabile (`article.project.collection`); un articolo non può appartenere a due stagioni (garantito dallo schema). Scartata l'alternativa di tenere le M:N + un `collection_id` denormalizzato su `Article` (doppia fonte di verità → drift garantito).
+
+Migrazione in due tempi (tutto reversibile fino all'ultima fase):
+1. `20260614145336_add_season_columns` — additiva: aggiunge le colonne nullable + `materialtypes.seasonal` + `collections.type/year`, poi **backfill** dai pivot (verificato lossless), marca `TXT` come seasonal, lega i tessuti all'unica collection, etichetta la collection esistente `SS 2027`. Le FK sono aggiunte nelle migration per-entità (`*_fk`) quando viene introdotta la relazione Prisma (evita falsi drift su FK non gestite dallo schema).
+2. `20260614210000_drop_membership_pivots` — **distruttiva**, confinata alla fase finale: `DROP TABLE articles_projects, collections_projects`. Gating: eseguita solo dopo aver verificato `COUNT(*) WHERE project_id IS NULL = 0` e `WHERE collection_id IS NULL = 0`.
+
+### (b) Stagionalità materiali
+Pilotata da `Materialtype.seasonal` (flag editabile da UI; di default solo `TXT` = tessuti). I materiali stagionali portano `materials.collection_id` (nullable); `MERC` e `LAV` restano perenni (`collection_id` null). Il filtro di lettura è `WHERE collectionId IS NULL OR collectionId = ?` così i perenni/legacy restano sempre visibili. Scartate: flag per-Material (duplica l'info del type → drift) e join M:N Material↔Collection (astrazione prematura).
+
+### (c) Meccanismo "stagione corrente" — client-side, non server
+Lo stato della stagione selezionata vive nel **frontend** (`localStorage` chiave `mf_collection`) e viaggia come **query param `collectionId`** (DTO condiviso `ScopedPaginationDto`). Scartati: claim JWT (richiederebbe riemissione token, accoppia auth a una preferenza di UI) e sessione server (contraddice il design stateless, sync multi-device non richiesta).
+
+**Nota di sicurezza:** il filtro `collectionId` è **scoping di vista, non autorizzazione**. Su un dato mono-tenant l'auth (JWT guard globale) già protegge l'accesso; un client che omette `collectionId` vede tutto — comportamento legacy accettabile e voluto (default = nessun filtro).
+
+Endpoint stagione-scoped (filtro applicato solo se `collectionId` presente; `where` e `count` coincidono): `order-headers` (`{ collectionId }`), `articles` (`{ project: { collectionId } }`), `fabrics` (`{ article: { project: { collectionId } } }`), `projects` (`{ collectionId }`), `materials` (`OR null/current`), `reports` cost-calc/cost-preview/consumption (subquery SQL condizionale, query identica all'attuale quando assente). NON scoped (globali): `collections` (è la sorgente del selettore), `customers`, `sizing`, `suppliers`, `unit-measurements`, `material-types`, `compositions`.
+
+### (d) Validazione cross-season delle righe ordine (req. 2, soft)
+In `order-details` create/batch: se l'ordine **e** l'articolo hanno entrambi una collection valorizzata e diversa → `BadRequestException`. Soft sui legacy: se uno dei due è null nessun blocco.
+
+---
+
 ## Variabili d'ambiente richieste
 
 | Variabile | Descrizione |

@@ -70,6 +70,32 @@ describe('Reports (e2e)', () => {
       // Detailed mode emits the per-article material breakdown header
       expect(res.text).toContain('Variante\tID\tMateriale\tPrice\tQta\tUMI\tTotale');
     });
+
+    it('GET /reports/cost-calculation?collectionId=… → 200 (season-scoped)', () =>
+      get('/reports/cost-calculation?collectionId=1').expect(200));
+  });
+
+  // ── Season-scoped JSON reports (collectionId param contract) ──────────────────
+  describe('Season scoping (cost-preview & consumption)', () => {
+    it('GET /reports/cost-preview → CostPreview shape', async () => {
+      const res = await get('/reports/cost-preview').expect(200);
+      expect(res.body).toHaveProperty('multiplier');
+      expect(Array.isArray(res.body.articles)).toBe(true);
+    });
+
+    it('GET /reports/cost-preview?collectionId=999999 → empty for unknown season', async () => {
+      const res = await get('/reports/cost-preview?collectionId=999999').expect(200);
+      expect(res.body.articles).toEqual([]);
+    });
+
+    it('GET /reports/cost-preview?collectionId=abc → 400 (validation)', () =>
+      get('/reports/cost-preview?collectionId=abc').expect(400));
+
+    it('GET /reports/material-consumption?collectionId=999999 → empty for unknown season', async () => {
+      const res = await get('/reports/material-consumption?collectionId=999999').expect(200);
+      expect(res.body.rows).toEqual([]);
+      expect(res.body.totalCost).toBe(0);
+    });
   });
 
   // ── Articles list PDF (Puppeteer required) ─────────────────────────────────

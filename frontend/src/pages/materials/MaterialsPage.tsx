@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -10,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import api from '@/lib/api';
+import { useCollection, useSeasonScopedParams } from '@/lib/collection';
 import type { Material, MaterialUsage, UnitMeasurement, MaterialType, Supplier, Paginated } from '@/types/api';
 
 const USAGE_LABELS: Record<MaterialUsage, string> = {
@@ -25,12 +27,14 @@ const schema = z.object({
   usage: z.enum(['FIXED', 'DYNAMIC', 'BOTH']),
   unitmeasurementId: z.coerce.number().positive('Obbligatorio'),
   supplierId: z.coerce.number().optional().nullable(),
+  collectionId: z.coerce.number().positive().optional().nullable(),
   materialTypeIds: z.array(z.number()).optional(),
 });
 type F = z.infer<typeof schema>;
 
 function MaterialForm({ item, onSuccess, onCancel }: { item?: Material; onSuccess: () => void; onCancel: () => void }) {
   const qc = useQueryClient();
+  const { collections, collectionId: currentCollectionId } = useCollection();
   const { data: ums } = useQuery({ queryKey: ['unit-measurements', 'all'], queryFn: () => api.get<Paginated<UnitMeasurement>>('/unit-measurements', { params: { limit: 200 } }).then(r => r.data) });
   const { data: mts } = useQuery({ queryKey: ['material-types', 'all'], queryFn: () => api.get<Paginated<MaterialType>>('/material-types', { params: { limit: 200 } }).then(r => r.data) });
   const { data: sups } = useQuery({ queryKey: ['suppliers', 'all'], queryFn: () => api.get<Paginated<Supplier>>('/suppliers', { params: { limit: 200 } }).then(r => r.data) });
@@ -44,15 +48,29 @@ function MaterialForm({ item, onSuccess, onCancel }: { item?: Material; onSucces
       usage: item?.usage ?? 'BOTH',
       unitmeasurementId: item?.unitmeasurementId ?? 0,
       supplierId: item?.supplierId ?? null,
+      collectionId: item?.collectionId ?? null,
       materialTypeIds: item?.materialtypes.map(t => t.id) ?? [],
     },
   });
 
   const selectedTypes = watch('materialTypeIds') ?? [];
+  // The season binding is only relevant when a seasonal material type is selected.
+  const isSeasonal = !!mts?.data.some(t => selectedTypes.includes(t.id) && t.seasonal);
 
   function toggleType(id: number) {
     setValue('materialTypeIds', selectedTypes.includes(id) ? selectedTypes.filter(t => t !== id) : [...selectedTypes, id]);
   }
+
+  // Prefill the current season when seasonal becomes active; clear it otherwise so
+  // perennial materials never get bound to a collection.
+  useEffect(() => {
+    if (isSeasonal) {
+      if (!watch('collectionId')) setValue('collectionId', currentCollectionId ?? null);
+    } else if (watch('collectionId')) {
+      setValue('collectionId', null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSeasonal]);
 
   const m = useMutation({
     mutationFn: (d: F) => item ? api.patch(`/materials/${item.id}`, d) : api.post('/materials', d),
@@ -120,11 +138,21 @@ function MaterialForm({ item, onSuccess, onCancel }: { item?: Material; onSucces
         <div className="flex flex-wrap gap-2 p-2 border rounded-md min-h-[40px]">
           {mts?.data.map(t => (
             <button key={t.id} type="button" onClick={() => toggleType(t.id)}>
-              <Badge variant={selectedTypes.includes(t.id) ? 'default' : 'outline'}>{t.code}</Badge>
+              <Badge variant={selectedTypes.includes(t.id) ? 'default' : 'outline'}>{t.code}{t.seasonal ? ' *' : ''}</Badge>
             </button>
           ))}
         </div>
       </div>
+      {isSeasonal && (
+        <div className="space-y-1">
+          <Label>Stagione</Label>
+          <Select value={watch('collectionId') ? String(watch('collectionId')) : ''} onValueChange={(v) => setValue('collectionId', Number(v))}>
+            <SelectTrigger><SelectValue placeholder="Seleziona stagione..." /></SelectTrigger>
+            <SelectContent>{collections.map(c => <SelectItem key={c.id} value={String(c.id)}>{c.displayName}</SelectItem>)}</SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">Tipo stagionale selezionato: lega il materiale a una stagione.</p>
+        </div>
+      )}
       <div className="flex justify-end gap-2">
         <Button type="button" variant="outline" onClick={onCancel}>Annulla</Button>
         <Button type="submit" disabled={m.isPending}>Salva</Button>
@@ -140,15 +168,18 @@ const columns: Column<Material>[] = [
   { header: 'Composizione', cell: (m) => <Badge variant="outline">{USAGE_LABELS[m.usage]}</Badge> },
   { header: 'U.M.', cell: (m) => m.unitmeasurement?.code ?? '—' },
   { header: 'Tipi', cell: (m) => <div className="flex gap-1">{m.materialtypes.map(t => <Badge key={t.id} variant="secondary">{t.code}</Badge>)}</div> },
+  { header: 'Stagione', cell: (m) => m.collection ? <Badge variant="secondary">{m.collection.displayName}</Badge> : '—' },
 ];
 
 export default function MaterialsPage() {
+  const scoped = useSeasonScopedParams();
   return (
     <CrudPage<Material>
       title="Materiali"
       endpoint="/materials"
       queryKey="materials"
       columns={columns}
+      extraParams={scoped}
       FormComponent={MaterialForm}
       createLabel="Nuovo materiale"
     />

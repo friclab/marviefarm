@@ -3,7 +3,36 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { ChevronDown, ChevronRight, LogOut, Ruler, Layers, BookOpen, Users, ShoppingBag, BarChart3, Scissors } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth';
+import { useCollection } from '@/lib/collection';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import api from '@/lib/api';
+
+const ALL_SEASONS = 'all';
+
+function SeasonSelector() {
+  const { collectionId, setCollectionId, collections, isLoading } = useCollection();
+
+  return (
+    <div className="px-4 py-3 border-b">
+      <label className="block text-xs font-medium text-muted-foreground mb-1">Stagione</label>
+      <Select
+        value={collectionId !== null ? String(collectionId) : ALL_SEASONS}
+        onValueChange={(v) => setCollectionId(v === ALL_SEASONS ? null : Number(v))}
+        disabled={isLoading}
+      >
+        <SelectTrigger>
+          <SelectValue placeholder={isLoading ? 'Caricamento...' : 'Tutte le stagioni'} />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={ALL_SEASONS}>Tutte le stagioni</SelectItem>
+          {collections.map((c) => (
+            <SelectItem key={c.id} value={String(c.id)}>{c.displayName}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
 
 interface NavItem { label: string; to: string }
 interface NavGroup { label: string; icon: React.ReactNode; items: NavItem[] }
@@ -109,6 +138,8 @@ export default function Sidebar() {
       <div className="px-4 py-4 border-b">
         <span className="font-bold text-lg">MarvieFarm</span>
       </div>
+
+      <SeasonSelector />
 
       <nav className="flex-1 overflow-y-auto p-2 space-y-0.5">
         {navGroups.map((g) => (

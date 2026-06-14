@@ -8,22 +8,32 @@ import { UpdateCollectionDto } from './dto/update-collection.dto';
 export interface CollectionResponse {
   id: number;
   name: string;
+  type: string | null;
+  year: number | null;
   displayName: string;
   projects: Array<{ id: number; name: string }>;
 }
 
 const includeRelations = {
-  projects: { include: { project: true } },
+  projects: true,
 } as const;
 
 type CollectionWithRelations = Prisma.CollectionGetPayload<{ include: typeof includeRelations }>;
+
+// "SS 2027 — Summer drop" when labelled, otherwise just the name.
+function collectionDisplayName(row: { name: string; type: string | null; year: number | null }): string {
+  const season = [row.type, row.year].filter(v => v !== null && v !== undefined).join(' ');
+  return season ? `${season} — ${row.name}` : row.name;
+}
 
 function toResponse(row: CollectionWithRelations): CollectionResponse {
   return {
     id: row.id,
     name: row.name,
-    displayName: row.name,
-    projects: row.projects.map(p => ({ id: p.project.id, name: p.project.name })),
+    type: row.type,
+    year: row.year,
+    displayName: collectionDisplayName(row),
+    projects: row.projects.map(p => ({ id: p.id, name: p.name })),
   };
 }
 
@@ -57,9 +67,10 @@ export class CollectionsService {
     const row = await this.prisma.collection.create({
       data: {
         ...fields,
-        projects: {
-          create: (projectIds ?? []).map(id => ({ projectId: id })),
-        },
+        // Projects join via their own FK (project.collectionId).
+        ...(projectIds?.length && {
+          projects: { connect: projectIds.map(id => ({ id })) },
+        }),
       },
       include: includeRelations,
     });
@@ -75,11 +86,9 @@ export class CollectionsService {
       where: { id },
       data: {
         ...fields,
+        // Full-replace the collection's project set via the FK (set = disconnect others).
         ...(projectIds !== undefined && {
-          projects: {
-            deleteMany: {},
-            create: projectIds.map(pid => ({ projectId: pid })),
-          },
+          projects: { set: projectIds.map(id => ({ id })) },
         }),
       },
       include: includeRelations,
@@ -95,10 +104,9 @@ export class CollectionsService {
         `Cannot delete: ${orderCount} order(s) reference this collection`,
       );
     }
-    await this.prisma.$transaction([
-      this.prisma.collectionProject.deleteMany({ where: { collectionId: id } }),
-      this.prisma.collection.delete({ where: { id } }),
-    ]);
+    // Member projects/materials keep their rows; their collection_id FK is set
+    // null on delete (ON DELETE SET NULL).
+    await this.prisma.collection.delete({ where: { id } });
   }
 
   private async assertProjectsExist(ids: number[]): Promise<void> {

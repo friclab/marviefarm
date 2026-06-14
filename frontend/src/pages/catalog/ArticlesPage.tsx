@@ -13,21 +13,26 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import api from '@/lib/api';
+import { useCollection, useSeasonScopedParams } from '@/lib/collection';
 import type { Article, ModeltypeSex, Project, Paginated } from '@/types/api';
 
 const schema = z.object({
   name: z.string().min(1, 'Obbligatorio'),
   description: z.string().optional(),
   modeltypesSexId: z.coerce.number().positive('Obbligatorio'),
-  projectIds: z.array(z.number()).optional(),
+  projectId: z.coerce.number().positive().optional().nullable(),
 });
 type F = z.infer<typeof schema>;
 
 function ArticleForm({ item, onSuccess, onCancel }: { item?: Article; onSuccess: () => void; onCancel: () => void }) {
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
+  const { collectionId } = useCollection();
   const { data: mts } = useQuery({ queryKey: ['modeltypes-sexes', 'all'], queryFn: () => api.get<Paginated<ModeltypeSex>>('/modeltypes-sexes', { params: { limit: 200 } }).then(r => r.data) });
-  const { data: projects } = useQuery({ queryKey: ['projects', 'all'], queryFn: () => api.get<Paginated<Project>>('/projects', { params: { limit: 200 } }).then(r => r.data) });
+  // Projects shown in the picker are scoped to the current season (backend filters
+  // when collectionId is passed; otherwise all projects are returned).
+  const projectParams = collectionId !== null ? { collectionId } : {};
+  const { data: projects } = useQuery({ queryKey: ['projects', 'picker', collectionId], queryFn: () => api.get<Paginated<Project>>('/projects', { params: { limit: 200, ...projectParams } }).then(r => r.data) });
 
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<F>({
     resolver: zodResolver(schema),
@@ -35,14 +40,9 @@ function ArticleForm({ item, onSuccess, onCancel }: { item?: Article; onSuccess:
       name: item?.name ?? '',
       description: item?.description ?? '',
       modeltypesSexId: item?.modeltypesSexId ?? 0,
-      projectIds: item?.projects.map(p => p.id) ?? [],
+      projectId: item?.projectId ?? null,
     },
   });
-
-  const selected = watch('projectIds') ?? [];
-  function toggleProject(id: number) {
-    setValue('projectIds', selected.includes(id) ? selected.filter(x => x !== id) : [...selected, id]);
-  }
 
   const m = useMutation({
     mutationFn: (d: F) => item ? api.patch(`/articles/${item.id}`, d) : api.post('/articles', d),
@@ -85,14 +85,11 @@ function ArticleForm({ item, onSuccess, onCancel }: { item?: Article; onSuccess:
         {errors.modeltypesSexId && <p className="text-xs text-destructive">{errors.modeltypesSexId.message}</p>}
       </div>
       <div className="space-y-1">
-        <Label>Progetti</Label>
-        <div className="flex flex-wrap gap-2 p-2 border rounded-md min-h-[40px]">
-          {projects?.data.map(p => (
-            <button key={p.id} type="button" onClick={() => toggleProject(p.id)}>
-              <Badge variant={selected.includes(p.id) ? 'default' : 'outline'}>{p.name}</Badge>
-            </button>
-          ))}
-        </div>
+        <Label>Progetto</Label>
+        <Select value={watch('projectId') ? String(watch('projectId')) : ''} onValueChange={(v) => setValue('projectId', Number(v))}>
+          <SelectTrigger><SelectValue placeholder="Seleziona progetto..." /></SelectTrigger>
+          <SelectContent>{projects?.data.map(p => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}</SelectContent>
+        </Select>
       </div>
       {item && (
         <div className="space-y-1">
@@ -128,17 +125,20 @@ const columns: Column<Article>[] = [
       <Badge variant="secondary">{a.modeltypesSex.sex.description ?? a.modeltypesSex.sex.code}</Badge>
     </div>
   )},
-  { header: 'Progetti', cell: (a) => <div className="flex gap-1">{a.projects.map(p => <Badge key={p.id} variant="secondary">{p.name}</Badge>)}</div> },
+  { header: 'Progetto', cell: (a) => a.project?.name ?? '—' },
+  { header: 'Stagione', cell: (a) => a.collection ? <Badge variant="secondary">{a.collection.displayName}</Badge> : '—' },
 ];
 
 export default function ArticlesPage() {
   const navigate = useNavigate();
+  const scoped = useSeasonScopedParams();
   return (
     <CrudPage<Article>
       title="Articoli"
       endpoint="/articles"
       queryKey="articles"
       columns={columns}
+      extraParams={scoped}
       FormComponent={ArticleForm}
       createLabel="Nuovo articolo"
       onDetail={(a) => navigate(`/catalog/articles/${a.id}`)}

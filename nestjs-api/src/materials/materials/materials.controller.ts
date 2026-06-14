@@ -2,7 +2,7 @@ import {
   Body, Controller, Delete, Get, HttpCode, HttpStatus,
   Param, ParseIntPipe, Patch, Post, Query,
 } from '@nestjs/common';
-import { PaginationDto } from '../../common/pagination.dto';
+import { ScopedPaginationDto } from '../../common/scoped-pagination.dto';
 import { PaginatedResult } from '../../common/paginated-result';
 import { CreateMaterialDto } from './dto/create-material.dto';
 import { UpdateMaterialDto } from './dto/update-material.dto';
@@ -13,8 +13,8 @@ export class MaterialsController {
   constructor(private readonly service: MaterialsService) {}
 
   @Get()
-  findAll(@Query() pagination: PaginationDto): Promise<PaginatedResult<MaterialResponse>> {
-    return this.service.findAll(pagination.page, pagination.limit);
+  findAll(@Query() query: ScopedPaginationDto): Promise<PaginatedResult<MaterialResponse>> {
+    return this.service.findAll(query.page, query.limit, query.collectionId);
   }
 
   @Get(':id')

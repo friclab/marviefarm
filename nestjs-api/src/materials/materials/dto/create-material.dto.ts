@@ -28,6 +28,12 @@ export class CreateMaterialDto {
   @IsPositive()
   unitmeasurementId?: number;
 
+  // Season binding; set only for seasonal material types (e.g. fabrics).
+  @IsOptional()
+  @IsInt()
+  @IsPositive()
+  collectionId?: number | null;
+
   // Fixed / dynamic / both — defaults to BOTH at the DB level when omitted
   @IsOptional()
   @IsEnum(MaterialUsage)
