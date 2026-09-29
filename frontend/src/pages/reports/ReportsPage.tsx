@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Separator } from '@/components/ui/separator';
 import { Checkbox } from '@/components/ui/checkbox';
 import api from '@/lib/api';
+import { useCollection, useSeasonScopedParams } from '@/lib/collection';
 
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -25,13 +26,15 @@ export default function ReportsPage() {
   const [csvLoading, setCsvLoading] = useState(false);
   const [articlesLoading, setArticlesLoading] = useState(false);
   const [formLoading, setFormLoading] = useState(false);
+  const scoped = useSeasonScopedParams();
+  const { current } = useCollection();
 
   async function downloadCsv() {
     setCsvLoading(true);
     try {
       const mult = Number(multiplier) || 1;
       const res = await api.get('/reports/cost-calculation', {
-        params: { multiplier: mult, detailed },
+        params: { multiplier: mult, detailed, ...scoped },
         responseType: 'blob',
       });
       downloadBlob(res.data as Blob, `costX${mult}.csv`);
@@ -80,6 +83,7 @@ export default function ReportsPage() {
             <CardDescription>
               Costo per articolo/variante (somma dei materiali × moltiplicatore).
               Spunta «Dettaglio materiali» per il report esteso con la distinta dei materiali.
+              {' '}Ambito: <strong>{current ? current.displayName : 'tutte le stagioni'}</strong>.
             </CardDescription>
           </CardHeader>
           <CardContent>

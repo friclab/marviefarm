@@ -28,7 +28,7 @@ export interface ModeltypeSexDependents {
 // ── Materials ─────────────────────────────────────────────────────────────────
 export interface Supplier { id: number; company: string | null; name: string | null; surname: string | null; displayName: string }
 export interface UnitMeasurement { id: number; code: string; description: string | null; displayName: string }
-export interface MaterialType { id: number; code: string; description: string | null; displayName: string }
+export interface MaterialType { id: number; code: string; description: string | null; seasonal: boolean; displayName: string }
 export type MaterialUsage = 'FIXED' | 'DYNAMIC' | 'BOTH';
 export interface Material {
   id: number; code: string; description: string | null; price: number | null; displayName: string;
@@ -36,6 +36,7 @@ export interface Material {
   unitmeasurementId: number | null; unitmeasurement: UnitMeasurement | null;
   materialtypes: MaterialType[];
   supplierId: number | null; supplier: Supplier | null;
+  collectionId: number | null; collection: { id: number; name: string; displayName: string } | null;
 }
 
 // ── Compositions ──────────────────────────────────────────────────────────────
@@ -59,12 +60,13 @@ export interface DynamicComposition {
 // ── Catalog ───────────────────────────────────────────────────────────────────
 export interface Project {
   id: number; name: string; displayName: string;
-  articles: { id: number; displayName: string }[];
-  collections: { id: number; displayName: string }[];
+  collectionId: number | null;
+  collection: { id: number; name: string; displayName: string } | null;
+  articles: { id: number; name: string; displayName: string }[];
 }
 export interface Collection {
-  id: number; name: string; displayName: string;
-  projects: { id: number; name: string; displayName: string }[];
+  id: number; name: string; type: string | null; year: number | null; displayName: string;
+  projects: { id: number; name: string; displayName?: string }[];
 }
 export interface Article {
   id: number; name: string; description: string | null; displayName: string;
@@ -72,7 +74,9 @@ export interface Article {
   fixedCompositionId: number | null;
   fixedComposition: FixedComposition | null;
   modeltypesSex: { id: number; displayName: string; modeltype: Modeltype; sex: Sex };
-  projects: { id: number; name: string; displayName: string }[];
+  projectId: number | null;
+  project: { id: number; name: string } | null;
+  collection: { id: number; name: string; displayName: string } | null;
 }
 export interface Fabric {
   id: number; code: string; description: string | null; price: number | null; displayName: string;
@@ -98,11 +102,13 @@ export interface OrderHeader {
   id: number; orderNumber: string | null; date: string | null;
   discount: number | null; notes: string | null; displayName: string;
   customerId: number; customer: Customer;
+  collectionId: number | null; collection: { id: number; name: string } | null;
   totals: OrderTotals;
   orderDetails?: OrderDetail[];
 }
 export interface OrderDetail {
   id: number; orderHeaderId: number; quantity: number | null; note: string | null;
+  unitPrice: number | null;
   articleId: number | null; article: Article | null;
   fabricId: number | null; fabric: Fabric | null;
   modeltypeSexSizeId: number | null; modeltypeSexSize: ModeltypeSexSize | null;

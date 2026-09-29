@@ -4,14 +4,14 @@ import {
 } from '@nestjs/common';
 import { IsInt, IsOptional, IsPositive } from 'class-validator';
 import { Type } from 'class-transformer';
-import { PaginationDto } from '../../common/pagination.dto';
+import { ScopedPaginationDto } from '../../common/scoped-pagination.dto';
 import { PaginatedResult } from '../../common/paginated-result';
 import { CreateFabricDto } from './dto/create-fabric.dto';
 import { UpdateFabricDto } from './dto/update-fabric.dto';
 import { BatchCreateFabricDto } from './dto/batch-create-fabric.dto';
 import { FabricsService, FabricResponse } from './fabrics.service';
 
-class FabricsQueryDto extends PaginationDto {
+class FabricsQueryDto extends ScopedPaginationDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -25,7 +25,7 @@ export class FabricsController {
 
   @Get()
   findAll(@Query() query: FabricsQueryDto): Promise<PaginatedResult<FabricResponse>> {
-    return this.service.findAll(query.page, query.limit, query.articleId);
+    return this.service.findAll(query.page, query.limit, query.articleId, query.collectionId);
   }
 
   @Get(':id')

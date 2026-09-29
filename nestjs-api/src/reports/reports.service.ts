@@ -110,8 +110,15 @@ export class ReportsService {
   // No user input is interpolated; the multiplier is applied in TypeScript.
   // NB: fixed composition now lives on the article (art.fixedcomposition_id),
   // whereas the legacy schema kept it on the fabric.
-  private async loadCostRows(): Promise<CostRow[]> {
-    return this.prisma.$queryRaw<CostRow[]>`
+  private async loadCostRows(collectionId?: number): Promise<CostRow[]> {
+    // Optional season scope via the article's project. Implemented as a WHERE
+    // subquery (not a JOIN) so the unscoped query stays byte-for-byte the same and
+    // never drops articles whose project_id is NULL.
+    const seasonFilter = collectionId
+      ? Prisma.sql`AND art.project_id IN (SELECT id FROM projects WHERE collection_id = ${collectionId})`
+      : Prisma.empty;
+
+    return this.prisma.$queryRaw<CostRow[]>(Prisma.sql`
       SELECT
         art.name AS art_name, art.description AS art_desc,
         fab.code AS var_code, fab.description AS var_desc,
@@ -123,7 +130,7 @@ export class ReportsService {
       JOIN fixedcompositions_materials fcm ON fcm.fixedcomposition_id = art.fixedcomposition_id
       JOIN materials mat ON mat.id = fcm.material_id
       JOIN unitmeasurements um ON um.id = mat.unitmeasurement_id
-      WHERE art.fixedcomposition_id IS NOT NULL
+      WHERE art.fixedcomposition_id IS NOT NULL ${seasonFilter}
 
       UNION ALL
 
@@ -138,16 +145,16 @@ export class ReportsService {
       JOIN dynamiccompositions_materials dcm ON dcm.dynamiccomposition_id = fab.dynamiccomposition_id
       JOIN materials mat ON mat.id = dcm.material_id
       JOIN unitmeasurements um ON um.id = mat.unitmeasurement_id
-      WHERE fab.dynamiccomposition_id IS NOT NULL
+      WHERE fab.dynamiccomposition_id IS NOT NULL ${seasonFilter}
 
       ORDER BY art_name, var_code, compo_type DESC, compo_id
-    `;
+    `);
   }
 
   // Interactive cost view: structured JSON of article → variant → materials with
   // per-material and per-variant cost totals. Same data source as the CSV export.
-  async getCostPreview(multiplier = 1): Promise<CostPreview> {
-    const rows = await this.loadCostRows();
+  async getCostPreview(multiplier = 1, collectionId?: number): Promise<CostPreview> {
+    const rows = await this.loadCostRows(collectionId);
 
     // Group into article → variant → materials, preserving query order.
     const articles = new Map<string, CostPreviewArticle>();
@@ -193,8 +200,12 @@ export class ReportsService {
   // (quantity Q on article A / fabric F) every material in A's fixed composition
   // and F's dynamic composition is consumed Q × its per-piece quantity. Results
   // are aggregated per material. Pass an orderId to scope to a single order.
-  async getMaterialConsumption(orderId?: number): Promise<MaterialConsumption> {
+  async getMaterialConsumption(orderId?: number, collectionId?: number): Promise<MaterialConsumption> {
     const orderFilter = orderId ? Prisma.sql`AND od.orderheader_id = ${orderId}` : Prisma.empty;
+    // Orders are season-bound, so scope by the order header's collection.
+    const seasonFilter = collectionId
+      ? Prisma.sql`AND od.orderheader_id IN (SELECT id FROM orderheaders WHERE collection_id = ${collectionId})`
+      : Prisma.empty;
 
     const rows = await this.prisma.$queryRaw<ConsumptionRaw[]>(Prisma.sql`
       SELECT
@@ -206,7 +217,7 @@ export class ReportsService {
         FROM orderdetails od
         JOIN articles art ON art.id = od.article_id
         JOIN fixedcompositions_materials fcm ON fcm.fixedcomposition_id = art.fixedcomposition_id
-        WHERE art.fixedcomposition_id IS NOT NULL AND od.qta IS NOT NULL ${orderFilter}
+        WHERE art.fixedcomposition_id IS NOT NULL AND od.qta IS NOT NULL ${orderFilter} ${seasonFilter}
 
         UNION ALL
 
@@ -214,7 +225,7 @@ export class ReportsService {
         FROM orderdetails od
         JOIN fabrics fab ON fab.id = od.fabric_id
         JOIN dynamiccompositions_materials dcm ON dcm.dynamiccomposition_id = fab.dynamiccomposition_id
-        WHERE fab.dynamiccomposition_id IS NOT NULL AND od.qta IS NOT NULL ${orderFilter}
+        WHERE fab.dynamiccomposition_id IS NOT NULL AND od.qta IS NOT NULL ${orderFilter} ${seasonFilter}
       ) c
       JOIN materials m ON m.id = c.material_id
       LEFT JOIN unitmeasurements um ON um.id = m.unitmeasurement_id
@@ -241,9 +252,9 @@ export class ReportsService {
     return { orderId: orderId ?? null, rows: mapped, totalCost };
   }
 
-  async generateCostCsv(multiplier = 1, detailed = false): Promise<Buffer> {
+  async generateCostCsv(multiplier = 1, detailed = false, collectionId?: number): Promise<Buffer> {
     // Faithful port of the legacy FabricsController::calculateCost() report.
-    const rows = await this.loadCostRows();
+    const rows = await this.loadCostRows(collectionId);
 
     // Group into article → variant → material rows, preserving query order.
     const articles = new Map<string, Map<string, CostRow[]>>();
@@ -315,14 +326,14 @@ export class ReportsService {
     const projects = await this.prisma.project.findMany({
       include: {
         articles: {
-          include: { article: { include: { fabrics: true } } },
-          orderBy: { article: { name: 'asc' } },
+          include: { fabrics: true },
+          orderBy: { name: 'asc' },
         },
       },
       orderBy: { name: 'asc' },
     });
 
-    const allArticleIds = projects.flatMap(p => p.articles.map(a => a.articleId));
+    const allArticleIds = projects.flatMap(p => p.articles.map(a => a.id));
 
     // Articles not assigned to any project
     const unassignedArticles = await this.prisma.article.findMany({
@@ -345,7 +356,7 @@ export class ReportsService {
       generatedAt: new Date().toLocaleString('it-IT'),
       projects: projects.map(p => ({
         projectName: p.name,
-        articles: p.articles.map(ap => toEntry(ap.article)),
+        articles: p.articles.map(toEntry),
       })),
       unassigned: unassignedArticles.map(toEntry),
     };
@@ -358,7 +369,8 @@ export class ReportsService {
   async generateOrderExportPdf(orderId: number): Promise<Buffer> {
     const order = await this.loadOrderForReport(orderId);
     const c = order.customer;
-    const vatApplied = c.vatApplied !== null ? Number(c.vatApplied) : null;
+    // The order's frozen VAT snapshot — not the customer's current rate.
+    const vatApplied = order.vatAppliedSnapshot !== null ? Number(order.vatAppliedSnapshot) : null;
 
     const details = order.orderDetails.map(d => ({
       qty: d.quantity,
@@ -367,19 +379,14 @@ export class ReportsService {
       articleName: d.article.name,
       fabricCode: d.fabric?.code ?? '—',
       fabricDescription: d.fabric?.description ?? null,
-      price: d.fabric?.price !== null && d.fabric?.price !== undefined ? Number(d.fabric.price) : null,
+      // Frozen unit price snapshot, not the live fabric price.
+      price: d.unitPrice !== null ? Number(d.unitPrice) : null,
       note: d.note,
     }));
 
-    const partialTotal = details.reduce(
-      (s, d) => s + (d.qty ?? 0) * (d.price ?? 0),
-      0,
-    );
     const discountPct = order.discount !== null ? Number(order.discount) : 0;
-    const discountAmount = partialTotal * discountPct / 100;
-    const subtotal = partialTotal - discountAmount;
-    const vat = (vatApplied ?? 0) * subtotal / 100;
-    const grandTotal = subtotal + vat;
+    // Same single source of truth as the orders API.
+    const totals = computeOrderTotals(order.orderDetails, order.discount, order.vatAppliedSnapshot);
 
     const html = renderOrderExport({
       orderNumber: order.orderNumber,
@@ -401,7 +408,7 @@ export class ReportsService {
       },
       discount: discountPct || null,
       details,
-      totals: { partialTotal, discountAmount, subtotal, vat, grandTotal },
+      totals,
     });
 
     return this.renderPdf(html);
@@ -426,7 +433,8 @@ export class ReportsService {
           articleDescription: d.article.description,
           fabricCode: d.fabric?.code ?? '—',
           fabricDescription: d.fabric?.description ?? null,
-          price: d.fabric?.price !== null && d.fabric?.price !== undefined ? Number(d.fabric.price) : null,
+          // Frozen unit price snapshot, not the live fabric price.
+          price: d.unitPrice !== null ? Number(d.unitPrice) : null,
           sizes: [],
         });
       }

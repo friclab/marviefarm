@@ -1,9 +1,12 @@
 import {
-  Controller, Get, Param, ParseIntPipe, ParseFloatPipe, ParseBoolPipe,
-  Query, Res, StreamableFile, DefaultValuePipe,
+  Controller, Get, Param, ParseIntPipe,
+  Query, Res, StreamableFile,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { ReportsService, CostPreview, MaterialConsumption } from './reports.service';
+import {
+  CostCalculationQueryDto, CostPreviewQueryDto, MaterialConsumptionQueryDto,
+} from './dto/report-query.dto';
 
 @Controller('reports')
 export class ReportsController {
@@ -13,32 +16,27 @@ export class ReportsController {
 
   @Get('cost-calculation')
   async costCalculation(
-    @Query('multiplier', new DefaultValuePipe(1), ParseFloatPipe) multiplier: number,
-    @Query('detailed', new DefaultValuePipe(false), ParseBoolPipe) detailed: boolean,
+    @Query() query: CostCalculationQueryDto,
     @Res({ passthrough: true }) res: Response,
   ): Promise<StreamableFile> {
-    const buffer = await this.service.generateCostCsv(multiplier, detailed);
+    const buffer = await this.service.generateCostCsv(query.multiplier, query.detailed, query.collectionId);
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="costX${multiplier}.csv"`);
+    res.setHeader('Content-Disposition', `attachment; filename="costX${query.multiplier}.csv"`);
     return new StreamableFile(buffer);
   }
 
   // ── Cost calculation preview (interactive JSON) ────────────────────────────
 
   @Get('cost-preview')
-  costPreview(
-    @Query('multiplier', new DefaultValuePipe(1), ParseFloatPipe) multiplier: number,
-  ): Promise<CostPreview> {
-    return this.service.getCostPreview(multiplier);
+  costPreview(@Query() query: CostPreviewQueryDto): Promise<CostPreview> {
+    return this.service.getCostPreview(query.multiplier, query.collectionId);
   }
 
   // ── Material consumption from orders (interactive JSON) ─────────────────────
 
   @Get('material-consumption')
-  materialConsumption(
-    @Query('orderId', new ParseIntPipe({ optional: true })) orderId?: number,
-  ): Promise<MaterialConsumption> {
-    return this.service.getMaterialConsumption(orderId);
+  materialConsumption(@Query() query: MaterialConsumptionQueryDto): Promise<MaterialConsumption> {
+    return this.service.getMaterialConsumption(query.orderId, query.collectionId);
   }
 
   // ── Articles list PDF ──────────────────────────────────────────────────────

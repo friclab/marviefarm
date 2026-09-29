@@ -159,6 +159,59 @@ describe('Materials (e2e)', () => {
       const codes = (res.body.data as Array<{ code: string }>).map(r => r.code);
       expect(codes).toEqual([...codes].sort());
     });
+
+    it('POST /material-types → seasonal flag round-trips', async () => {
+      const res = await post('/material-types', { code: 'SEAS', description: 'Seasonal', seasonal: true }).expect(201);
+      expect(res.body.seasonal).toBe(true);
+      ids.materialType.push(res.body.id as number);
+    });
+  });
+
+  // ── Season scoping (collectionId filter + OR-null perennials) ──────────────────
+  describe('Material season scoping', () => {
+    let collA: number;
+    let collB: number;
+    let umId: number;
+    let seasonalA: number;
+    let seasonalB: number;
+    let perennial: number;
+
+    beforeAll(async () => {
+      const a = await prisma.collection.create({ data: { name: 'E2E MatSeason A', type: 'SS', year: 2028 } });
+      const b = await prisma.collection.create({ data: { name: 'E2E MatSeason B', type: 'FW', year: 2028 } });
+      collA = a.id; collB = b.id;
+      const um = await prisma.unitmeasurement.create({ data: { code: 'M', description: 'Metri' } });
+      umId = um.id; ids.unitMeasurement.push(umId);
+
+      const ma = await post('/materials', { code: 'SEAS-A', unitmeasurementId: umId, collectionId: collA }).expect(201);
+      seasonalA = ma.body.id; ids.material.push(seasonalA);
+      const mb = await post('/materials', { code: 'SEAS-B', unitmeasurementId: umId, collectionId: collB }).expect(201);
+      seasonalB = mb.body.id; ids.material.push(seasonalB);
+      const mp = await post('/materials', { code: 'PERENNIAL', unitmeasurementId: umId }).expect(201);
+      perennial = mp.body.id; ids.material.push(perennial);
+    });
+
+    afterAll(async () => {
+      // FK is ON DELETE SET NULL, so this is safe even with materials still bound.
+      await prisma.collection.deleteMany({ where: { id: { in: [collA, collB] } } });
+    });
+
+    it('create binds the seasonal material to its collection', async () => {
+      const res = await get(`/materials/${seasonalA}`).expect(200);
+      expect(res.body.collectionId).toBe(collA);
+      expect(res.body.collection.id).toBe(collA);
+    });
+
+    it('GET /materials?collectionId → season materials + perennials, excludes other seasons', async () => {
+      const res = await get(`/materials?collectionId=${collA}&limit=1000`).expect(200);
+      const ids2 = (res.body.data as Array<{ id: number }>).map(m => m.id);
+      expect(ids2).toContain(seasonalA);
+      expect(ids2).toContain(perennial);       // OR null → always visible
+      expect(ids2).not.toContain(seasonalB);   // belongs to another season
+    });
+
+    it('POST /materials → bad collectionId → 400', () =>
+      post('/materials', { code: 'BADCOLL', unitmeasurementId: umId, collectionId: 9999999 }).expect(400));
   });
 
   // ── Material ──────────────────────────────────────────────────────────────

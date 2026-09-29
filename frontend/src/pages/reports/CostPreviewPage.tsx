@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import api from '@/lib/api';
+import { useSeasonScopedParams } from '@/lib/collection';
 import type { CostPreview, CostPreviewArticle, CostPreviewVariant } from '@/types/api';
 
 // Italian currency / number formatting (',' decimals, '.' thousands).
@@ -115,11 +116,12 @@ export default function CostPreviewPage() {
   const [search, setSearch] = useState('');
 
   const multiplier = Number(multiplierInput) || 1;
+  const scoped = useSeasonScopedParams();
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['reports', 'cost-preview', multiplier],
+    queryKey: ['reports', 'cost-preview', multiplier, scoped],
     queryFn: () =>
-      api.get<CostPreview>('/reports/cost-preview', { params: { multiplier } }).then(r => r.data),
+      api.get<CostPreview>('/reports/cost-preview', { params: { multiplier, ...scoped } }).then(r => r.data),
   });
 
   const articles = useMemo(() => {

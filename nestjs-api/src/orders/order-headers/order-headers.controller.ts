@@ -2,7 +2,7 @@ import {
   Body, Controller, Delete, Get, HttpCode, HttpStatus,
   Param, ParseIntPipe, Patch, Post, Query,
 } from '@nestjs/common';
-import { PaginationDto } from '../../common/pagination.dto';
+import { ScopedPaginationDto } from '../../common/scoped-pagination.dto';
 import { PaginatedResult } from '../../common/paginated-result';
 import { CreateOrderHeaderDto } from './dto/create-order-header.dto';
 import { UpdateOrderHeaderDto } from './dto/update-order-header.dto';
@@ -23,8 +23,8 @@ export class OrderHeadersController {
   }
 
   @Get()
-  findAll(@Query() pagination: PaginationDto): Promise<PaginatedResult<OrderHeaderListItem>> {
-    return this.service.findAll(pagination.page, pagination.limit);
+  findAll(@Query() query: ScopedPaginationDto): Promise<PaginatedResult<OrderHeaderListItem>> {
+    return this.service.findAll(query.page, query.limit, query.collectionId);
   }
 
   @Get(':id')

@@ -9,11 +9,13 @@ export interface MaterialTypeResponse {
   id: number;
   code: string;
   description: string | null;
+  // When true, materials of this type are scoped to a collection (e.g. fabrics).
+  seasonal: boolean;
   // Legacy pattern: '%s - %s' → "code - description"
   displayName: string;
 }
 
-type MtRow = { id: number; code: string; description: string | null };
+type MtRow = { id: number; code: string; description: string | null; seasonal: boolean };
 
 function toResponse(mt: MtRow): MaterialTypeResponse {
   return { ...mt, displayName: joinDisplay([mt.code, mt.description]) };

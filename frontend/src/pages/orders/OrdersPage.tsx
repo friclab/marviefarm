@@ -15,10 +15,12 @@ import DeleteDialog from '@/components/app/DeleteDialog';
 import Pagination from '@/components/app/Pagination';
 import api from '@/lib/api';
 import { fmtEur } from '@/lib/utils';
+import { useCollection, useSeasonScopedParams } from '@/lib/collection';
 import type { OrderHeader, Customer, Paginated } from '@/types/api';
 
 const schema = z.object({
   customerId: z.coerce.number().positive('Obbligatorio'),
+  collectionId: z.coerce.number().positive().optional().nullable(),
   orderNumber: z.string().optional(),
   date: z.string().optional(),
   discount: z.coerce.number().min(0).max(100).optional().nullable(),
@@ -28,12 +30,15 @@ type F = z.infer<typeof schema>;
 
 function OrderForm({ item, onSuccess, onCancel }: { item?: OrderHeader; onSuccess: () => void; onCancel: () => void }) {
   const qc = useQueryClient();
+  const { collections, collectionId: currentCollectionId } = useCollection();
   const { data: customers } = useQuery({ queryKey: ['customers', 'all'], queryFn: () => api.get<Paginated<Customer>>('/customers', { params: { limit: 500 } }).then(r => r.data) });
 
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<F>({
     resolver: zodResolver(schema),
     defaultValues: {
       customerId: item?.customerId ?? 0,
+      // Prefill with the currently selected season on create.
+      collectionId: item?.collectionId ?? currentCollectionId ?? null,
       orderNumber: item?.orderNumber ?? '',
       date: item?.date ?? '',
       discount: item?.discount ?? null,
@@ -59,6 +64,13 @@ function OrderForm({ item, onSuccess, onCancel }: { item?: OrderHeader; onSucces
           <SelectContent>{customers?.data.map(c => <SelectItem key={c.id} value={String(c.id)}>{c.displayName}</SelectItem>)}</SelectContent>
         </Select>
         {errors.customerId && <p className="text-xs text-destructive">{errors.customerId.message}</p>}
+      </div>
+      <div className="space-y-1">
+        <Label>Stagione</Label>
+        <Select value={watch('collectionId') ? String(watch('collectionId')) : ''} onValueChange={(v) => setValue('collectionId', Number(v))}>
+          <SelectTrigger><SelectValue placeholder="Seleziona stagione..." /></SelectTrigger>
+          <SelectContent>{collections.map(c => <SelectItem key={c.id} value={String(c.id)}>{c.displayName}</SelectItem>)}</SelectContent>
+        </Select>
       </div>
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-1">
@@ -94,10 +106,11 @@ export default function OrdersPage() {
   const [page, setPage] = useState(1);
   const [dialog, setDialog] = useState<OrderHeader | null | 'new'>(null);
   const [deleteItem, setDeleteItem] = useState<OrderHeader | null>(null);
+  const scoped = useSeasonScopedParams();
 
   const { data, isLoading } = useQuery({
-    queryKey: ['order-headers', page],
-    queryFn: () => api.get<Paginated<OrderHeader>>('/order-headers', { params: { page, limit: 20 } }).then(r => r.data),
+    queryKey: ['order-headers', page, scoped],
+    queryFn: () => api.get<Paginated<OrderHeader>>('/order-headers', { params: { page, limit: 20, ...scoped } }).then(r => r.data),
   });
 
   const deleteMutation = useMutation({

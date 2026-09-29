@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import api from '@/lib/api';
+import { useSeasonScopedParams } from '@/lib/collection';
 import type { MaterialConsumption, OrderHeader, Paginated } from '@/types/api';
 
 const eur = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
@@ -28,19 +29,22 @@ export default function MaterialConsumptionPage() {
   const navigate = useNavigate();
   const [orderId, setOrderId] = useState<string>(ALL);
   const [search, setSearch] = useState('');
+  const scoped = useSeasonScopedParams();
 
   const { data: orders } = useQuery({
-    queryKey: ['order-headers', 'all'],
+    queryKey: ['order-headers', 'all', scoped],
     queryFn: () =>
-      api.get<Paginated<OrderHeader>>('/order-headers', { params: { limit: 500 } }).then(r => r.data),
+      api.get<Paginated<OrderHeader>>('/order-headers', { params: { limit: 500, ...scoped } }).then(r => r.data),
   });
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['reports', 'material-consumption', orderId],
+    queryKey: ['reports', 'material-consumption', orderId, scoped],
     queryFn: () =>
       api
         .get<MaterialConsumption>('/reports/material-consumption', {
-          params: orderId === ALL ? {} : { orderId: Number(orderId) },
+          // A specific order is already season-bound; the season scope only applies
+          // to the "all orders" aggregate.
+          params: orderId === ALL ? { ...scoped } : { orderId: Number(orderId) },
         })
         .then(r => r.data),
   });

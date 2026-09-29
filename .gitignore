@@ -5,6 +5,7 @@
 /frontend/node_modules/
 .env
 .env.backup
+OPERATIONS.md
 .phpunit.result.cache
 Homestead.json
 Homestead.yaml

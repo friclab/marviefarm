@@ -1,4 +1,4 @@
-import { IsArray, IsInt, IsOptional, IsPositive, IsString, MinLength } from 'class-validator';
+import { IsInt, IsOptional, IsPositive, IsString, MinLength } from 'class-validator';
 
 export class CreateArticleDto {
   @IsString()
@@ -18,9 +18,9 @@ export class CreateArticleDto {
   @IsPositive()
   fixedCompositionId?: number | null;
 
+  // Single season membership (1:N). Null/absent = unassigned.
   @IsOptional()
-  @IsArray()
-  @IsInt({ each: true })
-  @IsPositive({ each: true })
-  projectIds?: number[];
+  @IsInt()
+  @IsPositive()
+  projectId?: number | null;
 }

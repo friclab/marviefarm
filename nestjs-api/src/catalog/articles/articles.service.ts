@@ -44,13 +44,15 @@ export interface ArticleResponse {
     modeltype: { id: number; code: string; description: string | null };
     sex: { id: number; code: string };
   };
-  projects: Array<{ id: number; name: string }>;
+  projectId: number | null;
+  project: { id: number; name: string } | null;
+  collection: { id: number; name: string; displayName: string } | null;
   fixedComposition: FixedCompositionDetail | null;
 }
 
 const includeRelations = {
   modeltypesSex: { include: { modeltype: true, sex: true } },
-  projects: { include: { project: true } },
+  project: { include: { collection: true } },
   fixedComposition: {
     include: {
       materials: {
@@ -62,6 +64,12 @@ const includeRelations = {
 } as const;
 
 type ArticleWithRelations = Prisma.ArticleGetPayload<{ include: typeof includeRelations }>;
+
+// "SS 2027 — name" when labelled, otherwise just the name.
+function collectionDisplayName(c: { name: string; type: string | null; year: number | null }): string {
+  const season = [c.type, c.year].filter(v => v !== null && v !== undefined).join(' ');
+  return season ? `${season} — ${c.name}` : c.name;
+}
 
 function toResponse(row: ArticleWithRelations): ArticleResponse {
   return {
@@ -83,7 +91,15 @@ function toResponse(row: ArticleWithRelations): ArticleResponse {
       },
       sex: { id: row.modeltypesSex.sex.id, code: row.modeltypesSex.sex.code },
     },
-    projects: row.projects.map(p => ({ id: p.project.id, name: p.project.name })),
+    projectId: row.projectId,
+    project: row.project ? { id: row.project.id, name: row.project.name } : null,
+    collection: row.project?.collection
+      ? {
+          id: row.project.collection.id,
+          name: row.project.collection.name,
+          displayName: collectionDisplayName(row.project.collection),
+        }
+      : null,
     fixedComposition: row.fixedComposition
       ? {
           id: row.fixedComposition.id,
@@ -121,15 +137,23 @@ function isJpeg(buf: Buffer): boolean {
 export class ArticlesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(page: number, limit: number): Promise<PaginatedResult<ArticleResponse>> {
+  async findAll(
+    page: number,
+    limit: number,
+    collectionId?: number,
+  ): Promise<PaginatedResult<ArticleResponse>> {
+    // Season scope via the article's project. Absent collectionId => show all.
+    const where: Prisma.ArticleWhereInput =
+      collectionId !== undefined ? { project: { collectionId } } : {};
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.article.findMany({
+        where,
         skip: (page - 1) * limit,
         take: limit,
         include: includeRelations,
         orderBy: { name: 'asc' },
       }),
-      this.prisma.article.count(),
+      this.prisma.article.count({ where }),
     ]);
     return paginate(rows.map(toResponse), total, page, limit);
   }
@@ -141,18 +165,16 @@ export class ArticlesService {
   }
 
   async create(dto: CreateArticleDto): Promise<ArticleResponse> {
-    const { projectIds, fixedCompositionId, ...fields } = dto;
+    const { projectId, fixedCompositionId, ...fields } = dto;
     await this.assertModeltypesSexExists(fields.modeltypesSexId);
-    if (projectIds?.length) await this.assertProjectsExist(projectIds);
+    if (projectId) await this.assertProjectExists(projectId);
     if (fixedCompositionId) await this.assertFixedCompositionExists(fixedCompositionId);
 
     const row = await this.prisma.article.create({
       data: {
         ...fields,
         fixedCompositionId: fixedCompositionId ?? null,
-        projects: {
-          create: (projectIds ?? []).map(id => ({ projectId: id })),
-        },
+        projectId: projectId ?? null,
       },
       include: includeRelations,
     });
@@ -161,11 +183,11 @@ export class ArticlesService {
 
   async update(id: number, dto: UpdateArticleDto): Promise<ArticleResponse> {
     await this.findOne(id);
-    const { projectIds, fixedCompositionId, ...fields } = dto;
+    const { projectId, fixedCompositionId, ...fields } = dto;
     if (fields.modeltypesSexId !== undefined) {
       await this.assertModeltypesSexExists(fields.modeltypesSexId);
     }
-    if (projectIds !== undefined && projectIds.length > 0) await this.assertProjectsExist(projectIds);
+    if (projectId) await this.assertProjectExists(projectId);
     if (fixedCompositionId) await this.assertFixedCompositionExists(fixedCompositionId);
 
     const row = await this.prisma.article.update({
@@ -173,12 +195,7 @@ export class ArticlesService {
       data: {
         ...fields,
         ...(fixedCompositionId !== undefined && { fixedCompositionId: fixedCompositionId ?? null }),
-        ...(projectIds !== undefined && {
-          projects: {
-            deleteMany: {},
-            create: projectIds.map(pid => ({ projectId: pid })),
-          },
-        }),
+        ...(projectId !== undefined && { projectId: projectId ?? null }),
       },
       include: includeRelations,
     });
@@ -194,7 +211,6 @@ export class ArticlesService {
       );
     }
     await this.prisma.$transaction([
-      this.prisma.articleProject.deleteMany({ where: { articleId: id } }),
       this.prisma.fabric.deleteMany({ where: { articleId: id } }),
       this.prisma.article.delete({ where: { id } }),
     ]);
@@ -228,14 +244,8 @@ export class ArticlesService {
     if (!exists) throw new BadRequestException(`FixedComposition ${id} does not exist`);
   }
 
-  private async assertProjectsExist(ids: number[]): Promise<void> {
-    const found = await this.prisma.project.findMany({
-      where: { id: { in: ids } },
-      select: { id: true },
-    });
-    if (found.length !== ids.length) {
-      const missing = ids.filter(id => !found.some(f => f.id === id));
-      throw new BadRequestException(`Project IDs not found: ${missing.join(', ')}`);
-    }
+  private async assertProjectExists(id: number): Promise<void> {
+    const exists = await this.prisma.project.findUnique({ where: { id } });
+    if (!exists) throw new BadRequestException(`Project ${id} does not exist`);
   }
 }

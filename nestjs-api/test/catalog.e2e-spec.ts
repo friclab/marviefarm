@@ -57,13 +57,9 @@ describe('Catalog (e2e)', () => {
   });
 
   afterAll(async () => {
-    await prisma.articleProject.deleteMany({ where: { articleId: { in: ids.article } } });
     await prisma.fabric.deleteMany({ where: { articleId: { in: ids.article } } });
     await prisma.article.deleteMany({ where: { id: { in: ids.article } } });
-    await prisma.collectionProject.deleteMany({ where: { collectionId: { in: ids.collection } } });
     await prisma.collection.deleteMany({ where: { id: { in: ids.collection } } });
-    await prisma.articleProject.deleteMany({ where: { projectId: { in: ids.project } } });
-    await prisma.collectionProject.deleteMany({ where: { projectId: { in: ids.project } } });
     await prisma.project.deleteMany({ where: { id: { in: ids.project } } });
     await prisma.modeltypeSex.delete({ where: { id: modeltypeSexId } });
     await prisma.modeltype.delete({ where: { id: seedModeltypeId } });
@@ -178,6 +174,45 @@ describe('Catalog (e2e)', () => {
         .expect(200);
       expect(res.headers['content-type']).toContain('image/jpeg');
     });
+  });
+
+  // ── Season membership (1:N) & scoping ────────────────────────────────────────
+  describe('Article season membership', () => {
+    let collId: number;
+    let projId: number;
+    let articleId: number;
+
+    it('creates an article in a project bound to a collection', async () => {
+      // Project<->collection binding is seeded directly (its API arrives in a later
+      // phase); here we exercise the article create + read path.
+      const coll = await prisma.collection.create({ data: { name: 'E2E Coll 1N', type: 'FW', year: 2030 } });
+      collId = coll.id;
+      ids.collection.push(collId);
+
+      const proj = await prisma.project.create({ data: { name: 'E2E Proj 1N', collectionId: collId } });
+      projId = proj.id;
+      ids.project.push(projId);
+
+      const art = await post('/articles', { name: 'E2E Art 1N', modeltypesSexId: modeltypeSexId, projectId: projId }).expect(201);
+      articleId = art.body.id as number;
+      ids.article.push(articleId);
+
+      // toResponse exposes project + derived collection (with season displayName).
+      expect(art.body.projectId).toBe(projId);
+      expect(art.body.project.id).toBe(projId);
+      expect(art.body.collection.id).toBe(collId);
+      expect(art.body.collection.displayName).toBe('FW 2030 — E2E Coll 1N');
+    });
+
+    it('GET /articles?collectionId → only articles of that season', async () => {
+      const res = await get(`/articles?collectionId=${collId}&limit=1000`).expect(200);
+      const data = res.body.data as Array<{ id: number; collection: { id: number } | null }>;
+      expect(data.some(a => a.id === articleId)).toBe(true);
+      expect(data.every(a => a.collection?.id === collId)).toBe(true);
+    });
+
+    it('POST /articles → bad projectId → 400', () =>
+      post('/articles', { name: 'Bad Proj', modeltypesSexId: modeltypeSexId, projectId: 9999999 }).expect(400));
   });
 
   // ── Fabric ─────────────────────────────────────────────────────────────────

@@ -161,15 +161,23 @@ function toDetailResponse(row: OrderHeaderDetail): OrderHeaderDetailResponse {
 export class OrderHeadersService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(page: number, limit: number): Promise<PaginatedResult<OrderHeaderListItem>> {
+  async findAll(
+    page: number,
+    limit: number,
+    collectionId?: number,
+  ): Promise<PaginatedResult<OrderHeaderListItem>> {
+    // Direct FK on orderheaders. Absent collectionId => no season filter (show all).
+    const where: Prisma.OrderHeaderWhereInput =
+      collectionId !== undefined ? { collectionId } : {};
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.orderHeader.findMany({
+        where,
         skip: (page - 1) * limit,
         take: limit,
         include: listInclude,
         orderBy: { id: 'desc' },
       }),
-      this.prisma.orderHeader.count(),
+      this.prisma.orderHeader.count({ where }),
     ]);
     return paginate(rows.map(toListItem), total, page, limit);
   }

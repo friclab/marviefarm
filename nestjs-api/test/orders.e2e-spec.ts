@@ -219,4 +219,117 @@ describe('Orders (e2e)', () => {
         ids.orderDetail.splice(ids.orderDetail.indexOf(odId), 1);
       }));
   });
+
+  // ── Price snapshot ───────────────────────────────────────────────────────────
+  describe('Price snapshot (frozen totals)', () => {
+    let ohId: number;
+
+    it('freezes fabric.price onto the line at creation', async () => {
+      const oh = await post('/order-headers', { customerId, orderNumber: 'E2E-FREEZE' }).expect(201);
+      ohId = oh.body.id as number;
+      ids.orderHeader.push(ohId);
+
+      const od = await post('/order-details', {
+        orderHeaderId: ohId, articleId, fabricId, modeltypeSexSizeId, quantity: 5,
+      }).expect(201);
+      ids.orderDetail.push(od.body.id as number);
+      // fabric price is 50 → snapshot captured on the line
+      expect(od.body.unitPrice).toBe(50);
+    });
+
+    it('does NOT alter saved totals when fabric.price changes afterwards', async () => {
+      const before = await get(`/order-headers/${ohId}`).expect(200);
+      expect(before.body.totals.partialTotal).toBe(250); // 50 × 5
+
+      // Mutate the live fabric price directly in the DB.
+      await prisma.fabric.update({ where: { id: fabricId }, data: { price: 999 } });
+      try {
+        const after = await get(`/order-headers/${ohId}`).expect(200);
+        // Totals stay frozen because they read the line's unitPrice snapshot.
+        expect(after.body.totals.partialTotal).toBe(250);
+        expect(after.body.orderDetails[0].unitPrice).toBe(50);
+      } finally {
+        await prisma.fabric.update({ where: { id: fabricId }, data: { price: 50 } });
+      }
+    });
+  });
+
+  // ── Season scoping (collectionId filter) ──────────────────────────────────────
+  describe('Season scoping', () => {
+    let collA: number;
+    let collB: number;
+    let orderA: number;
+    let orderB: number;
+    let articleA: number;   // bound to season A via its project
+    let articleB: number;   // bound to season B via its project
+    let projA: number;
+    let projB: number;
+
+    beforeAll(async () => {
+      const a = await prisma.collection.create({ data: { name: 'E2E Season A', type: 'SS', year: 2027 } });
+      const b = await prisma.collection.create({ data: { name: 'E2E Season B', type: 'FW', year: 2027 } });
+      collA = a.id;
+      collB = b.id;
+
+      const oa = await post('/order-headers', { customerId, orderNumber: 'E2E-SA', collectionId: collA }).expect(201);
+      const ob = await post('/order-headers', { customerId, orderNumber: 'E2E-SB', collectionId: collB }).expect(201);
+      orderA = oa.body.id as number;
+      orderB = ob.body.id as number;
+      ids.orderHeader.push(orderA, orderB);
+
+      const pa = await prisma.project.create({ data: { name: 'E2E Proj A', collectionId: collA } });
+      const pb = await prisma.project.create({ data: { name: 'E2E Proj B', collectionId: collB } });
+      projA = pa.id; projB = pb.id;
+      const aa = await prisma.article.create({ data: { name: 'E2E Art A', modeltypesSexId: modeltypeSexId, projectId: projA } });
+      const ab = await prisma.article.create({ data: { name: 'E2E Art B', modeltypesSexId: modeltypeSexId, projectId: projB } });
+      articleA = aa.id; articleB = ab.id;
+    });
+
+    afterAll(async () => {
+      // Order details reference the articles (possibly via a seasonless order too);
+      // remove every line for these articles before deleting them.
+      await prisma.orderDetail.deleteMany({ where: { articleId: { in: [articleA, articleB] } } });
+      await prisma.article.deleteMany({ where: { id: { in: [articleA, articleB] } } });
+      await prisma.project.deleteMany({ where: { id: { in: [projA, projB] } } });
+      await prisma.collection.deleteMany({ where: { id: { in: [collA, collB] } } });
+    });
+
+    it('GET /order-headers?collectionId → returns only that season', async () => {
+      const res = await get(`/order-headers?collectionId=${collA}`).expect(200);
+      const numbers = (res.body.data as Array<{ orderNumber: string; collectionId: number }>).map(o => o.orderNumber);
+      expect(numbers).toContain('E2E-SA');
+      expect(numbers).not.toContain('E2E-SB');
+      expect((res.body.data as Array<{ collectionId: number }>).every(o => o.collectionId === collA)).toBe(true);
+    });
+
+    it('GET /order-headers (no scope) → returns orders from all seasons', async () => {
+      const res = await get('/order-headers?limit=1000').expect(200);
+      const numbers = (res.body.data as Array<{ orderNumber: string }>).map(o => o.orderNumber);
+      expect(numbers).toContain('E2E-SA');
+      expect(numbers).toContain('E2E-SB');
+    });
+
+    it('GET /order-headers?collectionId=abc → 400 (validation)', () =>
+      get('/order-headers?collectionId=abc').expect(400));
+
+    // ── Cross-season order line validation (req. 2, soft) ──────────────────────
+    it('POST /order-details → article from a different season → 400', () =>
+      post('/order-details', { orderHeaderId: orderA, articleId: articleB, modeltypeSexSizeId, quantity: 1 }).expect(400));
+
+    it('POST /order-details → article from the same season → 201', async () => {
+      const res = await post('/order-details', {
+        orderHeaderId: orderA, articleId: articleA, modeltypeSexSizeId, quantity: 1,
+      }).expect(201);
+      ids.orderDetail.push(res.body.id as number);
+    });
+
+    it('POST /order-details → seasonless legacy order accepts any article (soft)', async () => {
+      const legacy = await post('/order-headers', { customerId, orderNumber: 'E2E-NOSEASON' }).expect(201);
+      ids.orderHeader.push(legacy.body.id as number);
+      const res = await post('/order-details', {
+        orderHeaderId: legacy.body.id, articleId: articleB, modeltypeSexSizeId, quantity: 1,
+      }).expect(201);
+      ids.orderDetail.push(res.body.id as number);
+    });
+  });
 });
